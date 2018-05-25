@@ -15,6 +15,10 @@ from utils import *
 torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
+from pyvirtualdisplay import Display
+display_ = Display(visible=0, size=(1400, 900))
+display_.start()
+
 torch.set_default_tensor_type('torch.DoubleTensor')
 
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
@@ -51,10 +55,18 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
+def save_param(model, model_file_name):
+    torch.save(model.state_dict(), model_file_name)
+
+def load_param(model, model_file_name):
+    model.load_state_dict(torch.load(model_file_name))
+    return model
+
 def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
     action_mean, _, action_std = policy_net(Variable(state))
     action = torch.normal(action_mean, action_std)
+    save_param(policy_net, 'Reacher.pkl')
     return action
 
 def update_params(batch):
@@ -97,7 +109,7 @@ def update_params(batch):
         for param in value_net.parameters():
             value_loss += param.pow(2).sum() * args.l2_reg
         value_loss.backward()
-        return (value_loss.data.double().numpy()[0], get_flat_grad_from(value_net).data.double().numpy())
+        return (value_loss.data.double().numpy()[()], get_flat_grad_from(value_net).data.double().numpy())
 
     flat_params, _, opt_info = scipy.optimize.fmin_l_bfgs_b(get_value_loss, get_flat_params_from(value_net).double().numpy(), maxiter=25)
     set_flat_params_to(value_net, torch.Tensor(flat_params))
@@ -152,7 +164,6 @@ for i_episode in count(1):
                 mask = 0
 
             memory.push(state, np.array([action]), mask, next_state, reward)
-
             if args.render:
                 env.render()
             if done:
