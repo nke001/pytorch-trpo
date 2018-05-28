@@ -1,0 +1,7 @@
+gym
+torch
+torchvision
+click
+opencv-python
+pyvirtualdisplay
+git+ssh://git@github.com/mavenlin/free_mjc.git
