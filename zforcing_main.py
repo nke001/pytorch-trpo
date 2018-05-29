@@ -80,7 +80,8 @@ load_param(value_net, "./Reacher_value.pkl")
 policy_net.cuda()
 value_net.cuda()
 
-zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128, mlp_dim=128, out_dim=10, z_force=True, cond_ln=True)
+zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
+              mlp_dim=128, out_dim=2, z_force=True, cond_ln=True)
 def pad(array, length):
     return array + [np.zeros_like(array[-1])] * (length - len(array))
 def max_length(arrays):
