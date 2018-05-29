@@ -34,6 +34,19 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='N',
 parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                     help='interval between training status logs (default: 10)')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--aux-weight-start', type=float, default=0.,
+                    help='start weight for auxiliary loss')
+parser.add_argument('--aux-weight-end', type=float, default=0.,
+                    help='end weight for auxiliary loss')
+parser.add_argument('--bwd-weight', type=float, default=0.,
+                    help='weight for bwd teacher forcing loss')
+parser.add_argument('--kld-weight-start', type=float, default=0.,
+                    help='start weight for kl divergence between prior and posterior z loss')
+parser.add_argument('--kld-step', type=float, default=5e-5,
+                    help='step size to anneal kld_weight per iteration')
+parser.add_argument('--aux-step', type=float, default=5e-5,
+                    help='step size to anneal aux_weight per iteration')
+
 args = parser.parse_args()
 
 lr = args.lr
@@ -76,6 +89,11 @@ def max_length(arrays):
 zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
               mlp_dim=128, out_dim=num_actions, z_force=True, cond_ln=True)
 opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
+
+kld_weight = args.kld_weight_start
+aux_weight = args.aux_weight_start
+bwd_weight = args.bwd_weight
+
 for iteration in count(1):
     training_images = []
     training_actions = []
@@ -131,10 +149,32 @@ for iteration in count(1):
     zf.float().cuda()
     hidden = zf.init_hidden(args.batch_size)
 
+
+    opt.zero_grad()
     # forward prop pass
     # fwd_nll: the forward rnn teacher forcing
     # bwd_nll: the backward rnn teacher forcing
     # aux_nll: the auxiliary task, z -> bwd prediction
     # kld: the kl between the posterior and prior of z
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
-    # backward prop pass
+    bwd_nll = (aux_weight > 0.) * (bwd_weight * bwd_nll)
+    aux_nll = aux_weight * aux_nll
+    all_loss = fwd_nll + bwd_nll + aux_nll + kld_weight * kld
+
+    # anneal kld cost
+    kld_weight += args.kld_step
+    kld_weight = min(kld_weight, 1.)
+    if args.aux_weight_start < args.aux_weight_end:
+        aux_weight += args.aux_step
+        aux_weight = min(aux_weight, args.aux_weight_end)
+    else:
+        aux_weight -= args.aux_step
+        aux_weight = max(aux_weight, args.aux_weight_end)
+
+    if np.isnan(all_loss.data[0]) or np.isinf(all_loss.data[0]):
+        continue
+
+    # backward propagation
+    all_loss.backward()
+    torch.nn.utils.clip_grad_norm(model.parameters(), 100.)
+    opt.step()
