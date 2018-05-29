@@ -127,9 +127,9 @@ class LSTMCell(nn.Module):
         if self.use_layernorm:
             igates = self.ln_ih(igates, gain=gain_ih, bias=bias_ih)
             hgates = self.ln_hh(hgates, gain=gain_hh, bias=bias_hh)
-            return state(igates, hgates, c_0)
+            return state.apply(igates, hgates, c_0)
         else:
-            return state(igates, hgates, c_0,
+            return state.apply(igates, hgates, c_0,
                          self.bias_ih, self.bias_hh)
 
     def __repr__(self):
