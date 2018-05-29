@@ -25,34 +25,19 @@ display_.start()
 torch.set_default_tensor_type('torch.DoubleTensor')
 
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
-parser.add_argument('--gamma', type=float, default=0.995, metavar='G',
-                    help='discount factor (default: 0.995)')
 parser.add_argument('--env-name', default="Reacher-v2", metavar='G',
                     help='name of the environment to run')
-parser.add_argument('--tau', type=float, default=0.97, metavar='G',
-                    help='gae (default: 0.97)')
-parser.add_argument('--l2-reg', type=float, default=1e-3, metavar='G',
-                    help='l2 regularization regression (default: 1e-3)')
-parser.add_argument('--max-kl', type=float, default=1e-2, metavar='G',
-                    help='max kl value (default: 1e-2)')
-parser.add_argument('--damping', type=float, default=1e-1, metavar='G',
-                    help='damping (default: 1e-1)')
 parser.add_argument('--seed', type=int, default=543, metavar='N',
                     help='random seed (default: 1)')
-parser.add_argument('--batch-size', type=int, default=15000, metavar='N',
+parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='random seed (default: 1)')
-parser.add_argument('--render', action='store_true',
-                    help='render the environment')
 parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                     help='interval between training status logs (default: 10)')
-parser.add_argument('--test', type=bool, default=False, help="no update params")
 args = parser.parse_args()
 
 env = gym.make(args.env_name)
-
 num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
-
 env.seed(args.seed)
 torch.manual_seed(args.seed)
 
@@ -81,7 +66,7 @@ policy_net.cuda()
 value_net.cuda()
 
 zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
-              mlp_dim=128, out_dim=2, z_force=True, cond_ln=True)
+              mlp_dim=128, out_dim=num_actions, z_force=True, cond_ln=True)
 def pad(array, length):
     return array + [np.zeros_like(array[-1])] * (length - len(array))
 def max_length(arrays):
@@ -133,4 +118,6 @@ for i_episode in count(1):
     x_mask = torch.from_numpy(images_mask).cuda()
     zf.float().cuda()
     hidden = zf.init_hidden(args.batch_size)
+    opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
+
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
