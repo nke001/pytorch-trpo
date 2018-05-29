@@ -33,8 +33,10 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                     help='interval between training status logs (default: 10)')
+parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 args = parser.parse_args()
 
+lr = args.lr
 env = gym.make(args.env_name)
 num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
@@ -65,17 +67,20 @@ load_param(value_net, "./Reacher_value.pkl")
 policy_net.cuda()
 value_net.cuda()
 
-zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
-              mlp_dim=128, out_dim=num_actions, z_force=True, cond_ln=True)
 def pad(array, length):
     return array + [np.zeros_like(array[-1])] * (length - len(array))
 def max_length(arrays):
     return max([len(array) for array in arrays])
 
-for i_episode in count(1):
+
+zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
+              mlp_dim=128, out_dim=num_actions, z_force=True, cond_ln=True)
+opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
+for iteration in count(1):
     training_images = []
     training_actions = []
     num_episodes = 0
+    # Each iteration first collect #batch_size episodes
     while num_episodes < args.batch_size:
         print(num_episodes)
         episode_images = []
@@ -101,10 +106,17 @@ for i_episode in count(1):
         training_images.append(episode_images)
         training_actions.append(episode_actions)
         num_episodes += 1
+
+    # After having #batch_size trajectories, make the python array into numpy array
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
     images_mask = [[1] * (len(array) - 1) + [0] * (images_max_len - len(array))
                    for array in training_images]
+
+    # Here's something a little twisted, we want the trajectories in one batch to be the same
+    # length. So we want to pad zero to the ends of short trajectories. However, the forward
+    # and backward trajectories are shifted by one. So we need to create and pad the fwd/bwd
+    # trajectories individually and pass them to the zforcing model.
     fwd_images = [pad(array[:-1], images_max_len - 1) for array in training_images]
     bwd_images = [pad(array[1:], images_max_len - 1) for array in training_images]
     training_actions = [pad(array, actions_max_len) for array in training_actions]
@@ -118,6 +130,7 @@ for i_episode in count(1):
     x_mask = torch.from_numpy(images_mask).cuda()
     zf.float().cuda()
     hidden = zf.init_hidden(args.batch_size)
-    opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
 
+    # forward prop pass
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
+    # backward prop pass
