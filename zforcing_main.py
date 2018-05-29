@@ -132,5 +132,9 @@ for iteration in count(1):
     hidden = zf.init_hidden(args.batch_size)
 
     # forward prop pass
+    # fwd_nll: the forward rnn teacher forcing
+    # bwd_nll: the backward rnn teacher forcing
+    # aux_nll: the auxiliary task, z -> bwd prediction
+    # kld: the kl between the posterior and prior of z
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
     # backward prop pass
