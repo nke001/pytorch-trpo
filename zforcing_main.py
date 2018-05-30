@@ -1,7 +1,7 @@
 import argparse
 from itertools import count
 
-import free_mjc
+#import free_mjc
 import gym
 import scipy.optimize
 
@@ -94,6 +94,7 @@ kld_weight = args.kld_weight_start
 aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 
+
 for iteration in count(1):
     training_images = []
     training_actions = []
@@ -176,5 +177,7 @@ for iteration in count(1):
 
     # backward propagation
     all_loss.backward()
-    torch.nn.utils.clip_grad_norm(model.parameters(), 100.)
+    torch.nn.utils.clip_grad_norm(zf.parameters(), 100.)
+
+
     opt.step()
