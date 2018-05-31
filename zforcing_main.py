@@ -58,7 +58,6 @@ torch.manual_seed(args.seed)
 
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
-
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
 
@@ -70,13 +69,12 @@ def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
     action_mean, _, action_std = policy_net(Variable(state).cuda())
     action = torch.normal(action_mean, action_std)
-    save_param(policy_net, 'Reacher.pkl')
     return action
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
-load_param(policy_net, "./Reacher_policy.pkl")
-load_param(value_net, "./Reacher_value.pkl")
+load_param(policy_net, "Reacher_policy_copy.pkl")
+load_param(value_net, "Reacher_value_copy.pkl")
 policy_net.cuda()
 value_net.cuda()
 
@@ -94,6 +92,8 @@ kld_weight = args.kld_weight_start
 aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 
+#import ipdb; ipdb.set_trace()
+
 for iteration in count(1):
     training_images = []
     training_actions = []
@@ -110,26 +110,29 @@ for iteration in count(1):
         for t in range(10000):
             action = select_action(state)
             action = action.data[0].cpu().numpy()
+            
             image = env.render(mode="rgb_array")
             image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
             image = np.transpose(image, (2, 0, 1))
+            
             next_state, reward, done, _ = env.step(action)
+            #print(reward) 
+            #import ipdb; ipdb.set_trace()
             reward_sum += reward
             next_state = running_state(next_state)
             episode_images.append(image)
             episode_actions.append(action)
             if done:
                 break
-            reward_batch += reward_sum
-
+        reward_batch += reward_sum
         image = env.render(mode="rgb_array")
         image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
         image = np.transpose(image, (2, 0, 1))
         episode_images.append(image)
         training_images.append(episode_images)
         training_actions.append(episode_actions)
-        print (reward_batch/ num_episodes)
         num_episodes += 1
+        print (reward_batch/ num_episodes)
     # After having #batch_size trajectories, make the python array into numpy array
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
