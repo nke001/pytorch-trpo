@@ -86,14 +86,13 @@ def max_length(arrays):
     return max([len(array) for array in arrays])
 
 
-zf = ZForcing(emb_dim=256, rnn_dim=128, z_dim=128,
-              mlp_dim=128, out_dim=num_actions, z_force=True, cond_ln=True)
+zf = ZForcing(emb_dim=512, rnn_dim=512, z_dim=256,
+              mlp_dim=256, out_dim=num_actions, z_force=True, cond_ln=True)
 opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
 
 kld_weight = args.kld_weight_start
 aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
-
 
 for iteration in count(1):
     training_images = []
@@ -106,6 +105,8 @@ for iteration in count(1):
         episode_actions = []
         state = env.reset()
         state = running_state(state)
+        reward_sum = 0
+        reward_batch = 0
         for t in range(10000):
             action = select_action(state)
             action = action.data[0].cpu().numpy()
@@ -113,25 +114,28 @@ for iteration in count(1):
             image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
             image = np.transpose(image, (2, 0, 1))
             next_state, reward, done, _ = env.step(action)
+            reward_sum += reward
             next_state = running_state(next_state)
             episode_images.append(image)
             episode_actions.append(action)
             if done:
                 break
+            reward_batch += reward_sum
+
         image = env.render(mode="rgb_array")
         image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
         image = np.transpose(image, (2, 0, 1))
         episode_images.append(image)
         training_images.append(episode_images)
         training_actions.append(episode_actions)
+        print (reward_batch/ num_episodes)
         num_episodes += 1
-
     # After having #batch_size trajectories, make the python array into numpy array
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
     images_mask = [[1] * (len(array) - 1) + [0] * (images_max_len - len(array))
                    for array in training_images]
-
+    
     # Here's something a little twisted, we want the trajectories in one batch to be the same
     # length. So we want to pad zero to the ends of short trajectories. However, the forward
     # and backward trajectories are shifted by one. So we need to create and pad the fwd/bwd
@@ -171,8 +175,15 @@ for iteration in count(1):
     else:
         aux_weight -= args.aux_step
         aux_weight = max(aux_weight, args.aux_weight_end)
-
-    if np.isnan(all_loss.data[0]) or np.isinf(all_loss.data[0]):
+    log_line =' All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f' % (
+            all_loss.item(),
+            fwd_nll.item(),
+            bwd_nll.item(),
+            aux_nll.item()
+        ) + '\n'
+    print(log_line)
+  
+    if np.isnan(all_loss.item()) or np.isinf(all_loss.item()):
         continue
 
     # backward propagation

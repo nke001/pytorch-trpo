@@ -167,11 +167,11 @@ class ZForcing(nn.Module):
         self.drop_grad = drop_grad
 
         self.emb_mod = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=8, stride=2, padding=1),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
             nn.LeakyReLU(),
@@ -368,7 +368,6 @@ class ZForcing(nn.Module):
         log_pz = (log_pz * x_mask).sum(0)
         log_qz = (log_qz * x_mask).sum(0)
         aux_nll = (aux_nll * x_mask).sum(0)
-
         if self.out_type == 'gaussian':
             out_mu, out_logvar = torch.chunk(fwd_outputs, 2, -1)
             fwd_nll = -log_prob_gaussian(y, out_mu, out_logvar)
