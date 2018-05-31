@@ -53,6 +53,7 @@ lr = args.lr
 env = gym.make(args.env_name)
 num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
+
 env.seed(args.seed)
 torch.manual_seed(args.seed)
 
@@ -73,8 +74,10 @@ def select_action(state):
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
+
 load_param(policy_net, "Reacher_policy_copy.pkl")
 load_param(value_net, "Reacher_value_copy.pkl")
+
 policy_net.cuda()
 value_net.cuda()
 
@@ -86,6 +89,7 @@ def max_length(arrays):
 
 zf = ZForcing(emb_dim=512, rnn_dim=512, z_dim=256,
               mlp_dim=256, out_dim=num_actions, z_force=True, cond_ln=True)
+
 opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
 
 kld_weight = args.kld_weight_start
@@ -97,16 +101,20 @@ bwd_weight = args.bwd_weight
 for iteration in count(1):
     training_images = []
     training_actions = []
+    
     num_episodes = 0
+    reward_batch = 0
+    
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.batch_size:
-        print(num_episodes)
+        #print(num_episodes)
         episode_images = []
         episode_actions = []
+        
         state = env.reset()
         state = running_state(state)
         reward_sum = 0
-        reward_batch = 0
+        
         for t in range(10000):
             action = select_action(state)
             action = action.data[0].cpu().numpy()
@@ -122,18 +130,25 @@ for iteration in count(1):
             next_state = running_state(next_state)
             episode_images.append(image)
             episode_actions.append(action)
+            state = next_state
             if done:
                 break
+         
+        num_episodes += 1
         reward_batch += reward_sum
+        
         image = env.render(mode="rgb_array")
         image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
         image = np.transpose(image, (2, 0, 1))
         episode_images.append(image)
+        
         training_images.append(episode_images)
         training_actions.append(episode_actions)
-        num_episodes += 1
-        print (reward_batch/ num_episodes)
+        
+    print (reward_batch/ num_episodes)
+    
     # After having #batch_size trajectories, make the python array into numpy array
+    
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
     images_mask = [[1] * (len(array) - 1) + [0] * (images_max_len - len(array))
@@ -178,11 +193,12 @@ for iteration in count(1):
     else:
         aux_weight -= args.aux_step
         aux_weight = max(aux_weight, args.aux_weight_end)
-    log_line =' All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f' % (
+    log_line =' All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f' % (
             all_loss.item(),
             fwd_nll.item(),
             bwd_nll.item(),
-            aux_nll.item()
+            aux_nll.item(),
+            kld.item()
         ) + '\n'
     print(log_line)
   
@@ -191,7 +207,7 @@ for iteration in count(1):
 
     # backward propagation
     all_loss.backward()
-    torch.nn.utils.clip_grad_norm(zf.parameters(), 100.)
+    torch.nn.utils.clip_grad_norm_(zf.parameters(), 100.)
 
 
     opt.step()
