@@ -358,6 +358,44 @@ class ZForcing(nn.Module):
         states = states.index_select(0, idx)
         outputs = outputs.index_select(0, idx)
         return states, outputs
+    
+    def generate_onestep(self, x_fwd, x_mask, hidden):
+        nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)
+        #bwd_states, bwd_outputs = self.bwd_pass(x_bwd, hidden)
+        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz = self.fwd_pass(
+            x_fwd, hidden, bwd_states=None)
+        
+        return (fwd_outputs, hidden)
+        
+        '''kld = (klds * x_mask).sum(0)
+        log_pz = (log_pz * x_mask).sum(0)
+        log_qz = (log_qz * x_mask).sum(0)
+        aux_nll = (aux_nll * x_mask).sum(0)
+        if self.out_type == 'gaussian':
+            out_mu, out_logvar = torch.chunk(fwd_outputs, 2, -1)
+            fwd_nll = -log_prob_gaussian(y, out_mu, out_logvar)
+            fwd_nll = (fwd_nll * x_mask).sum(0)
+            out_mu, out_logvar = torch.chunk(bwd_outputs, 2, -1)
+            bwd_nll = -log_prob_gaussian(y, out_mu, out_logvar)
+            bwd_nll = (bwd_nll * x_mask).sum(0)
+        elif self.out_type == 'softmax':
+            fwd_out = fwd_outputs.view(nsteps * nbatch, self.out_dim)
+            fwd_out = F.log_softmax(fwd_out)
+            y = y.view(-1, 1)
+            fwd_nll = torch.gather(fwd_out, 1, y).squeeze(1)
+            fwd_nll = fwd_nll.view(nsteps, nbatch)
+            fwd_nll = -(fwd_nll * x_mask).sum(0)
+            bwd_out = bwd_outputs.view(nsteps * nbatch, self.out_dim)
+            bwd_out = F.log_softmax(bwd_out)
+            y = y.view(-1, 1)
+            bwd_nll = torch.gather(bwd_out, 1, y).squeeze(1)
+            bwd_nll = -bwd_nll.view(nsteps, nbatch)
+            bwd_nll = (bwd_nll * x_mask).sum(0)
+
+        if return_stats:
+            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz
+        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean() '''
+ 
 
     def forward(self, x_fwd, x_bwd, y, x_mask, hidden, return_stats=False):
         nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)

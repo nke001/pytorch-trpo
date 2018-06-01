@@ -14,6 +14,7 @@ from trpo import trpo_step
 from utils import *
 from rl_zforcing import ZForcing
 import cv2
+import random
 
 torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
@@ -47,8 +48,14 @@ parser.add_argument('--kld-step', type=float, default=5e-5,
 parser.add_argument('--aux-step', type=float, default=5e-5,
                     help='step size to anneal aux_weight per iteration')
 
-args = parser.parse_args()
+parser.add_argument('--eval-interval', type=int, default=10, metavar='N',
+                    help='evaluation interaval (default: 50)')
 
+parser.add_argument('--val-batch-size', type=int, default=100, metavar='N',
+                    help='random seed (default: 1)')
+
+args = parser.parse_args()
+import ipdb; ipdb.set_trace()
 lr = args.lr
 env = gym.make(args.env_name)
 num_inputs = env.observation_space.shape[0]
@@ -59,6 +66,9 @@ torch.manual_seed(args.seed)
 
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
+
+zforce_filename = 'zforce_reacher_' + str(random.randint(1,500)) +'.pkl'
+
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
 
@@ -71,6 +81,49 @@ def select_action(state):
     action_mean, _, action_std = policy_net(Variable(state).cuda())
     action = torch.normal(action_mean, action_std)
     return action
+
+def evaluate_(model):
+    # evaluate how well model does 
+    num_episodes = 0
+    reward_batch = 0
+    #model.eval()
+    model.cuda()
+    hidden = zf.init_hidden(1) 
+    # Each iteration first collect #batch_size episodes
+    while num_episodes < args.val_batch_size:
+        #print(num_episodes)
+
+        state = env.reset()
+        reward_sum = 0
+
+        for t in range(10000):
+            image = env.render(mode="rgb_array")
+            image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image).cuda().unsqueeze(0).unsqueeze(0).float()
+            
+            bwd_image = image
+            mask = torch.ones([1,1])
+            
+            action_param, hidden = zf.generate_onestep(image, mask, hidden) 
+            
+            action_param = action_param.squeeze(0).squeeze(0)
+            
+            action = torch.normal(action_param[0], action_param[1])
+            action = action.item()
+            
+            _, reward, done, _ = env.step(action)
+            
+            reward_sum += reward
+            
+            if done:
+                break
+
+        num_episodes += 1
+        reward_batch += reward_sum
+
+    print ('test reward is ', reward_batch/ num_episodes)
+
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
@@ -97,6 +150,11 @@ aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 
 #import ipdb; ipdb.set_trace()
+#zf = load_param(zf, 'zforce_reacher_80pkl')
+zf.float()
+zf.cuda()
+evaluate_(zf)
+#import ipdb; ipdb.set_trace()
 
 for iteration in count(1):
     training_images = []
@@ -104,13 +162,13 @@ for iteration in count(1):
     
     num_episodes = 0
     reward_batch = 0
-    
+    zf.train() 
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.batch_size:
         #print(num_episodes)
         episode_images = []
         episode_actions = []
-        
+        state = env.reset() 
         state = env.reset()
         state = running_state(state)
         reward_sum = 0
@@ -133,7 +191,7 @@ for iteration in count(1):
             state = next_state
             if done:
                 break
-         
+        import ipdb; ipdb.set_trace() 
         num_episodes += 1
         reward_batch += reward_sum
         
@@ -148,7 +206,6 @@ for iteration in count(1):
     print (reward_batch/ num_episodes)
     
     # After having #batch_size trajectories, make the python array into numpy array
-    
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
     images_mask = [[1] * (len(array) - 1) + [0] * (images_max_len - len(array))
@@ -161,24 +218,23 @@ for iteration in count(1):
     fwd_images = [pad(array[:-1], images_max_len - 1) for array in training_images]
     bwd_images = [pad(array[1:], images_max_len - 1) for array in training_images]
     training_actions = [pad(array, actions_max_len) for array in training_actions]
+    
     fwd_images = np.array(list(zip(*fwd_images)), dtype=np.float32)
     bwd_images = np.array(list(zip(*bwd_images)), dtype=np.float32)
     images_mask = np.array(list(zip(*images_mask)), dtype=np.float32)
     training_actions = np.array(list(zip(*training_actions)), dtype=np.float32)
+    
     x_fwd = torch.from_numpy(fwd_images).cuda()
     x_bwd = torch.from_numpy(bwd_images).cuda()
     y = torch.from_numpy(training_actions).cuda()
     x_mask = torch.from_numpy(images_mask).cuda()
+    
     zf.float().cuda()
     hidden = zf.init_hidden(args.batch_size)
 
 
     opt.zero_grad()
-    # forward prop pass
-    # fwd_nll: the forward rnn teacher forcing
-    # bwd_nll: the backward rnn teacher forcing
-    # aux_nll: the auxiliary task, z -> bwd prediction
-    # kld: the kl between the posterior and prior of z
+    
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
     bwd_nll = (aux_weight > 0.) * (bwd_weight * bwd_nll)
     aux_nll = aux_weight * aux_nll
@@ -193,7 +249,8 @@ for iteration in count(1):
     else:
         aux_weight -= args.aux_step
         aux_weight = max(aux_weight, args.aux_weight_end)
-    log_line =' All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f' % (
+    log_line ='Iteration: %d, All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f' % (
+            iteration,
             all_loss.item(),
             fwd_nll.item(),
             bwd_nll.item(),
@@ -206,8 +263,12 @@ for iteration in count(1):
         continue
 
     # backward propagation
-    all_loss.backward()
-    torch.nn.utils.clip_grad_norm_(zf.parameters(), 100.)
+    #all_loss.backward()
+    #torch.nn.utils.clip_grad_norm_(zf.parameters(), 100.)
+
+    #opt.step()
+    if (iteration + 1 ) % args.eval_interval == 0:
+        save_param(zf, zforce_filename) 
+        evaluate_(zf)
 
 
-    opt.step()
