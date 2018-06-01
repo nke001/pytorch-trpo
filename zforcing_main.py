@@ -48,14 +48,13 @@ parser.add_argument('--kld-step', type=float, default=5e-5,
 parser.add_argument('--aux-step', type=float, default=5e-5,
                     help='step size to anneal aux_weight per iteration')
 
-parser.add_argument('--eval-interval', type=int, default=10, metavar='N',
+parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
                     help='evaluation interaval (default: 50)')
 
-parser.add_argument('--val-batch-size', type=int, default=100, metavar='N',
+parser.add_argument('--val-batch-size', type=int, default=500, metavar='N',
                     help='random seed (default: 1)')
 
 args = parser.parse_args()
-import ipdb; ipdb.set_trace()
 lr = args.lr
 env = gym.make(args.env_name)
 num_inputs = env.observation_space.shape[0]
@@ -67,7 +66,8 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
-zforce_filename = 'zforce_reacher_' + str(random.randint(1,500)) +'.pkl'
+zforce_filename = 'zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_ ' + str(random.randint(1,500)) +'.pkl'
+log_file = 'zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_ ' + str(random.randint(1,500)) + '.txt'
 
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
@@ -127,7 +127,9 @@ def evaluate_(model):
         reward_batch += reward_sum
 
     print ('test reward is ', reward_batch/ num_episodes)
-
+    log_line = 'test_reward is , ' + reward_batch/ num_episodes
+    with open(log_file, 'a') as f:
+        f.write(log_line)
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
@@ -153,13 +155,13 @@ kld_weight = args.kld_weight_start
 aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 
-#import ipdb; ipdb.set_trace()
-zf = load_param(zf, 'zforce_reacher_64.pkl')
+#import ipdb.set_trace()
+#zf = load_param(zf, 'zforce_reacher_64.pkl')
 zf.float()
 zf.cuda()
 
-evaluate_(zf)
-import ipdb; ipdb.set_trace()
+#evaluate_(zf)
+#import ipdb; ipdb.set_trace()
 #import ipdb; ipdb.set_trace()
 
 for iteration in count(1):
@@ -264,7 +266,8 @@ for iteration in count(1):
             kld.item()
         ) + '\n'
     print(log_line)
-  
+    with open(log_file, 'a') as f:
+        f.write(log_line)
     if np.isnan(all_loss.item()) or np.isinf(all_loss.item()):
         continue
 
