@@ -364,8 +364,8 @@ class ZForcing(nn.Module):
         #bwd_states, bwd_outputs = self.bwd_pass(x_bwd, hidden)
         fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz = self.fwd_pass(
             x_fwd, hidden, bwd_states=None)
-        
-        return (fwd_outputs, hidden)
+        out_mu, out_logvar = torch.chunk(fwd_outputs, 2, -1) 
+        return (out_mu, out_logvar, hidden)
         
         '''kld = (klds * x_mask).sum(0)
         log_pz = (log_pz * x_mask).sum(0)

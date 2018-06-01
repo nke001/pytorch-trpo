@@ -93,7 +93,9 @@ def evaluate_(model):
     while num_episodes < args.val_batch_size:
         #print(num_episodes)
 
-        state = env.reset()
+        _ = env.reset()
+        _ = env.reset()
+        _ = env.reset()
         reward_sum = 0
 
         for t in range(10000):
@@ -105,11 +107,13 @@ def evaluate_(model):
             bwd_image = image
             mask = torch.ones([1,1])
             
-            action_param, hidden = zf.generate_onestep(image, mask, hidden) 
-            
-            action_param = action_param.squeeze(0).squeeze(0)
-            
-            action = torch.normal(action_param[0], action_param[1])
+            action_mu, action_var, hidden = zf.generate_onestep(image, mask, hidden) 
+            action_mu = action_mu.squeeze(0).squeeze(0)
+            action_logvar = action_var.squeeze(0).squeeze(0)
+            std = action_logvar.mul(0.5).exp_()
+            eps = std.data.new(std.size()).normal_()
+            action = eps.mul(std).add_(action_mu)
+            #action = torch.normal(action_mu, torch.exp(action_logvar))
             action = action.item()
             
             _, reward, done, _ = env.step(action)
@@ -150,10 +154,12 @@ aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 
 #import ipdb; ipdb.set_trace()
-#zf = load_param(zf, 'zforce_reacher_80pkl')
+zf = load_param(zf, 'zforce_reacher_64.pkl')
 zf.float()
 zf.cuda()
+
 evaluate_(zf)
+import ipdb; ipdb.set_trace()
 #import ipdb; ipdb.set_trace()
 
 for iteration in count(1):
@@ -169,6 +175,7 @@ for iteration in count(1):
         episode_images = []
         episode_actions = []
         state = env.reset() 
+        state = env.reset()
         state = env.reset()
         state = running_state(state)
         reward_sum = 0
@@ -191,7 +198,6 @@ for iteration in count(1):
             state = next_state
             if done:
                 break
-        import ipdb; ipdb.set_trace() 
         num_episodes += 1
         reward_batch += reward_sum
         
@@ -263,10 +269,10 @@ for iteration in count(1):
         continue
 
     # backward propagation
-    #all_loss.backward()
-    #torch.nn.utils.clip_grad_norm_(zf.parameters(), 100.)
+    all_loss.backward()
+    torch.nn.utils.clip_grad_norm_(zf.parameters(), 100.)
 
-    #opt.step()
+    opt.step()
     if (iteration + 1 ) % args.eval_interval == 0:
         save_param(zf, zforce_filename) 
         evaluate_(zf)
