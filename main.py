@@ -55,6 +55,8 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
+filename =  args.env_name + '.pkl'
+
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
 
@@ -66,7 +68,6 @@ def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
     action_mean, _, action_std = policy_net(Variable(state))
     action = torch.normal(action_mean, action_std)
-    save_param(policy_net, 'Reacher.pkl')
     return action
 
 def update_params(batch):
@@ -120,7 +121,11 @@ def update_params(batch):
     fixed_log_prob = normal_log_density(Variable(actions), action_means, action_log_stds, action_stds).data.clone()
 
     def get_loss(volatile=False):
-        action_means, action_log_stds, action_stds = policy_net(Variable(states, volatile=volatile))
+        if volatile:
+            with torch.no_grad():
+                action_means, action_log_stds, action_stds = policy_net(Variable(states))
+        else:
+            action_means, action_log_stds, action_stds = policy_net(Variable(states))
         log_prob = normal_log_density(Variable(actions), action_means, action_log_stds, action_stds)
         action_loss = -Variable(advantages) * torch.exp(log_prob - Variable(fixed_log_prob))
         return action_loss.mean()
@@ -146,6 +151,8 @@ for i_episode in count(1):
     num_steps = 0
     reward_batch = 0
     num_episodes = 0
+    num_step = 0 
+    count = 0
     while num_steps < args.batch_size:
         state = env.reset()
         state = running_state(state)
@@ -156,11 +163,11 @@ for i_episode in count(1):
             action = action.data[0].numpy()
             next_state, reward, done, _ = env.step(action)
             reward_sum += reward
-
             next_state = running_state(next_state)
 
             mask = 1
             if done:
+                num_step += t
                 mask = 0
 
             memory.push(state, np.array([action]), mask, next_state, reward)
@@ -170,6 +177,8 @@ for i_episode in count(1):
                 break
 
             state = next_state
+        count += 1
+        save_param(policy_net, filename)
         num_steps += (t-1)
         num_episodes += 1
         reward_batch += reward_sum
@@ -181,3 +190,6 @@ for i_episode in count(1):
     if i_episode % args.log_interval == 0:
         print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
             i_episode, reward_sum, reward_batch))
+        log_line = 'Envoriment: '+ args.env_name  + '  average steps until finish %.2f '%(num_step/count)
+        print (log_line)
+        count= 0
