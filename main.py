@@ -55,7 +55,8 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
-filename =  args.env_name + '.pkl'
+policy_filename =  args.env_name + '_policy.pkl'
+value_filename = args.env_name + '_value.pkl'
 
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
@@ -178,7 +179,8 @@ for i_episode in count(1):
 
             state = next_state
         count += 1
-        save_param(policy_net, filename)
+        save_param(policy_net, policy_filename)
+        save_param(value_net, value_filename)
         num_steps += (t-1)
         num_episodes += 1
         reward_batch += reward_sum
@@ -188,6 +190,7 @@ for i_episode in count(1):
     update_params(batch)
 
     if i_episode % args.log_interval == 0:
+        print ('======================================\n')
         print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
             i_episode, reward_sum, reward_batch))
         log_line = 'Envoriment: '+ args.env_name  + '  average steps until finish %.2f '%(num_step/count)
