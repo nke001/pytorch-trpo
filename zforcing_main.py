@@ -15,12 +15,14 @@ from utils import *
 from rl_zforcing import ZForcing
 import cv2
 import random
+import scipy.misc
+import os
 
 torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
 from pyvirtualdisplay import Display
-display_ = Display(visible=0, size=(1400, 900))
+display_ = Display(visible=0, size=(550, 500))
 display_.start()
 
 torch.set_default_tensor_type('torch.DoubleTensor')
@@ -66,8 +68,15 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
-zforce_filename = 'zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_ ' + str(random.randint(1,500)) +'.pkl'
-log_file = 'zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_ ' + str(random.randint(1,500)) + '.txt'
+filename = args.env_name + '_model/zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
+os.mkdir(filename)
+train_folder = os.path.join(filename, 'train')
+test_folder = os.path.join(filename, 'test')
+os.mkdir(train_folder)
+os.mkdir(test_folder)
+zforce_filename = os.path.join(filename, 'student.pkl')
+log_file = os.path.join(filename, 'log.txt')
+
 
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
@@ -78,7 +87,7 @@ def load_param(model, model_file_name):
 
 def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
-    action_mean, _, action_std = policy_net(Variable(state).cuda())
+    action_mean, _, action_std = policy_net(Variable(state))
     action = torch.normal(action_mean, action_std)
     return action
 
@@ -86,23 +95,22 @@ def evaluate_(model):
     # evaluate how well model does 
     num_episodes = 0
     reward_batch = 0
-    #model.eval()
     model.cuda()
     hidden = zf.init_hidden(1) 
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.val_batch_size:
         #print(num_episodes)
-
-        _ = env.reset()
-        _ = env.reset()
         _ = env.reset()
         reward_sum = 0
 
         for t in range(10000):
             image = env.render(mode="rgb_array")
-            image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
-            image = np.transpose(image, (2, 0, 1))
-            image = torch.from_numpy(image).cuda().unsqueeze(0).unsqueeze(0).float()
+            image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
+            import ipdb; ipdb.set_trace()
+            scipy.misc.imsave(image_file, image)
+            image = image_resize(image)
+
+            image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float()
             
             bwd_image = image
             mask = torch.ones([1,1])
@@ -113,7 +121,6 @@ def evaluate_(model):
             std = action_logvar.mul(0.5).exp_()
             eps = std.data.new(std.size()).normal_()
             action = eps.mul(std).add_(action_mu)
-            #action = torch.normal(action_mu, torch.exp(action_logvar))
             action = action.item()
             
             _, reward, done, _ = env.step(action)
@@ -127,18 +134,18 @@ def evaluate_(model):
         reward_batch += reward_sum
 
     print ('test reward is ', reward_batch/ num_episodes)
-    log_line = 'test_reward is , ' + reward_batch/ num_episodes
+    log_line = 'test_reward is , ' + str(reward_batch/ num_episodes)
     with open(log_file, 'a') as f:
         f.write(log_line)
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
 
-load_param(policy_net, "Reacher_policy_copy.pkl")
-load_param(value_net, "Reacher_value_copy.pkl")
+load_param(policy_net, "Reacher_policy.pkl")
+load_param(value_net, "Reacher_value.pkl")
 
-policy_net.cuda()
-value_net.cuda()
+policy_net#.cuda()
+value_net#.cuda()
 
 def pad(array, length):
     return array + [np.zeros_like(array[-1])] * (length - len(array))
@@ -164,6 +171,16 @@ zf.cuda()
 #import ipdb; ipdb.set_trace()
 #import ipdb; ipdb.set_trace()
 
+def image_resize(image):
+    image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+    image = np.transpose(image, (2, 0, 1))
+    return image
+
+
+def expert_sample():
+    import ipdb; ipdb.set_trace()
+
+
 for iteration in count(1):
     training_images = []
     training_actions = []
@@ -177,35 +194,40 @@ for iteration in count(1):
         episode_images = []
         episode_actions = []
         state = env.reset() 
-        state = env.reset()
-        state = env.reset()
         state = running_state(state)
         reward_sum = 0
         
         for t in range(10000):
-            action = select_action(state)
-            action = action.data[0].cpu().numpy()
             
+            action = select_action(state)
+            action = action.data[0].numpy()
+            
+            next_state, reward, done, _ = env.step(action)
             image = env.render(mode="rgb_array")
+            image_filename = os.path.join(filename, 'train/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg')
+            scipy.misc.imsave(image_filename, image)
             image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
             image = np.transpose(image, (2, 0, 1))
             
-            next_state, reward, done, _ = env.step(action)
+
             #print(reward) 
             #import ipdb; ipdb.set_trace()
             reward_sum += reward
             next_state = running_state(next_state)
+            
             episode_images.append(image)
             episode_actions.append(action)
+            
             state = next_state
             if done:
                 break
+        
         num_episodes += 1
         reward_batch += reward_sum
         
         image = env.render(mode="rgb_array")
-        image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
-        image = np.transpose(image, (2, 0, 1))
+        image = image_resize(image)
+
         episode_images.append(image)
         
         training_images.append(episode_images)
