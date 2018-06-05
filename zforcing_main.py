@@ -79,6 +79,7 @@ os.mkdir(test_folder)
 zforce_filename = os.path.join(filename, 'student.pkl')
 log_file = os.path.join(filename, 'log.txt')
 
+train_on_image = True
 
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
@@ -102,7 +103,7 @@ def evaluate_(model):
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.val_batch_size:
         #print(num_episodes)
-        _ = env.reset()
+        state = env.reset()
         reward_sum = 0
 
         for t in range(10000):
@@ -113,19 +114,23 @@ def evaluate_(model):
 
             image = image_resize(image)
             image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda()
-            
-            bwd_image = image
             mask = torch.ones([1,1])
             action_mu, action_var, hidden = zf.generate_onestep(image, mask, hidden) 
+            
             action_mu = action_mu.squeeze(0).squeeze(0)
             action_logvar = action_var.squeeze(0).squeeze(0)
             std = action_logvar.mul(0.5).exp_()
+            
             eps = std.data.new(std.size()).normal_()
+            
             action = eps.mul(std).add_(action_mu)
+            
             action = action.cpu().data.numpy()
+
+            expert_action = select_action(state)
+            next_state, reward, done, _ = env.step(expert_action)
             
-            _, reward, done, _ = env.step(action)
-            
+            state = running_state(next_state)
             reward_sum += reward
             
             if done:
@@ -202,16 +207,16 @@ for iteration in count(1):
             action = select_action(state)
             action = action.data[0].numpy()
             
-            next_state, reward, done, _ = env.step(action)
-            image = env.render(mode="rgb_array")
-            image_filename = os.path.join(filename, 'train/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg')
-            scipy.misc.imsave(image_filename, image)
-            image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
-            image = np.transpose(image, (2, 0, 1))
+            if train_on_image:
+                image = env.render(mode="rgb_array")
+                image_filename = os.path.join(filename, 'train/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg')
+                scipy.misc.imsave(image_filename, image)
+                image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+                image = np.transpose(image, (2, 0, 1))
             
 
-            #print(reward) 
-            #import ipdb; ipdb.set_trace()
+            next_state, reward, done, _ = env.step(action)
+            
             reward_sum += reward
             next_state = running_state(next_state)
             
@@ -263,7 +268,6 @@ for iteration in count(1):
 
 
     opt.zero_grad()
-    
     fwd_nll, bwd_nll, aux_nll, kld = zf(x_fwd, x_bwd, y, x_mask, hidden)
     bwd_nll = (aux_weight > 0.) * (bwd_weight * bwd_nll)
     aux_nll = aux_weight * aux_nll
