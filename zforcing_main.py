@@ -154,6 +154,7 @@ def evaluate_(model):
 
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
+running_state_test = ZFilter((num_inputs,), clip=5)
 
 load_param(policy_net, "Reacher_policy.pkl")
 load_param(value_net, "Reacher_value.pkl")
@@ -207,7 +208,7 @@ for iteration in count(1):
         episode_images = []
         episode_actions = []
         state = env.reset() 
-        state = running_state(state)
+        state = running_state_test(state)
         reward_sum = 0
         
         for t in range(10000):
@@ -226,7 +227,7 @@ for iteration in count(1):
             next_state, reward, done, _ = env.step(action)
             
             reward_sum += reward
-            next_state = running_state(next_state)
+            next_state = running_state_test(next_state)
             
             episode_images.append(image)
             episode_actions.append(action)
