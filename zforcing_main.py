@@ -99,7 +99,9 @@ def evaluate_(model):
     num_episodes = 0
     reward_batch = 0
     model.cuda()
-    hidden = zf.init_hidden(1) 
+    hidden = zf.init_hidden(1)
+    all_action_diff = 0
+
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.val_batch_size:
         #print(num_episodes)
@@ -127,8 +129,13 @@ def evaluate_(model):
             
             action = action.cpu().data.numpy()
 
-            expert_action = select_action(state)
-            next_state, reward, done, _ = env.step(expert_action)
+            expert_action = select_action(state).data.numpy()
+            
+            action_diff_norm =  (np.linalg.norm(expert_action - action))
+            
+            all_action_diff += action_diff_norm
+
+            next_state, reward, done, _ = env.step(action)
             
             state = running_state(next_state)
             reward_sum += reward
@@ -140,6 +147,7 @@ def evaluate_(model):
         reward_batch += reward_sum
 
     print ('test reward is ', reward_batch/ num_episodes)
+    print ('average action diff norm is ', all_action_diff / num_episodes / 50)
     log_line = 'test_reward is , ' + str(reward_batch/ num_episodes)
     with open(log_file, 'a') as f:
         f.write(log_line)
