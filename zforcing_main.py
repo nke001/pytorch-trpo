@@ -53,7 +53,7 @@ parser.add_argument('--aux-step', type=float, default=5e-5,
 parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
                     help='evaluation interaval (default: 50)')
 
-parser.add_argument('--val-batch-size', type=int, default=500, metavar='N',
+parser.add_argument('--val-batch-size', type=int, default=50, metavar='N',
                     help='random seed (default: 1)')
 
 args = parser.parse_args()
@@ -67,6 +67,8 @@ torch.manual_seed(args.seed)
 
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
+
+import ipdb;ipdb.set_trace()
 
 filename = args.env_name + '_model/zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.mkdir(filename)
@@ -104,24 +106,23 @@ def evaluate_(model):
         reward_sum = 0
 
         for t in range(10000):
-            image = env.render(mode="rgb_array")
-            image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
-            import ipdb; ipdb.set_trace()
-            scipy.misc.imsave(image_file, image)
-            image = image_resize(image)
+            image = env.render(mode="rgb_array") 
+            if num_episodes % 5 == 0:
+                image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
+                scipy.misc.imsave(image_file, image)
 
-            image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float()
+            image = image_resize(image)
+            image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda()
             
             bwd_image = image
             mask = torch.ones([1,1])
-            
             action_mu, action_var, hidden = zf.generate_onestep(image, mask, hidden) 
             action_mu = action_mu.squeeze(0).squeeze(0)
             action_logvar = action_var.squeeze(0).squeeze(0)
             std = action_logvar.mul(0.5).exp_()
             eps = std.data.new(std.size()).normal_()
             action = eps.mul(std).add_(action_mu)
-            action = action.item()
+            action = action.cpu().data.numpy()
             
             _, reward, done, _ = env.step(action)
             
@@ -152,9 +153,9 @@ def pad(array, length):
 def max_length(arrays):
     return max([len(array) for array in arrays])
 
-
+import ipdb; ipdb.set_trace()
 zf = ZForcing(emb_dim=512, rnn_dim=512, z_dim=256,
-              mlp_dim=256, out_dim=num_actions, z_force=True, cond_ln=True)
+              mlp_dim=256, out_dim=num_actions * 2, z_force=True, cond_ln=True)
 
 opt = torch.optim.Adam(zf.parameters(), lr=lr, eps=1e-5)
 
@@ -168,7 +169,6 @@ zf.float()
 zf.cuda()
 
 #evaluate_(zf)
-#import ipdb; ipdb.set_trace()
 #import ipdb; ipdb.set_trace()
 
 def image_resize(image):
@@ -248,7 +248,6 @@ for iteration in count(1):
     fwd_images = [pad(array[:-1], images_max_len - 1) for array in training_images]
     bwd_images = [pad(array[1:], images_max_len - 1) for array in training_images]
     training_actions = [pad(array, actions_max_len) for array in training_actions]
-    
     fwd_images = np.array(list(zip(*fwd_images)), dtype=np.float32)
     bwd_images = np.array(list(zip(*bwd_images)), dtype=np.float32)
     images_mask = np.array(list(zip(*images_mask)), dtype=np.float32)
