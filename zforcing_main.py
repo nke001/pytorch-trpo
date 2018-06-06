@@ -13,6 +13,7 @@ from torch.autograd import Variable
 from trpo import trpo_step
 from utils import *
 from rl_zforcing import ZForcing
+from generate_expert import generate_expert_trajectory
 import cv2
 import random
 import scipy.misc
@@ -198,63 +199,19 @@ def expert_sample():
 for iteration in count(1):
     training_images = []
     training_actions = []
-    
-    num_episodes = 0
-    reward_batch = 0
-    zf.train() 
-    # Each iteration first collect #batch_size episodes
-    while num_episodes < args.batch_size:
-        #print(num_episodes)
-        episode_images = []
-        episode_actions = []
-        state = env.reset() 
-        state = running_state_test(state)
-        reward_sum = 0
-        
-        for t in range(10000):
-            
-            action = select_action(state)
-            action = action.data[0].numpy()
-            
-            if train_on_image:
-                image = env.render(mode="rgb_array")
-                image_filename = os.path.join(filename, 'train/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg')
-                scipy.misc.imsave(image_filename, image)
-                image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
-                image = np.transpose(image, (2, 0, 1))
-            
 
-            next_state, reward, done, _ = env.step(action)
-            
-            reward_sum += reward
-            next_state = running_state_test(next_state)
-            
-            episode_images.append(image)
-            episode_actions.append(action)
-            
-            state = next_state
-            if done:
-                break
-        
-        num_episodes += 1
-        reward_batch += reward_sum
-        
-        image = env.render(mode="rgb_array")
-        image = image_resize(image)
+    zf.train()
+    training_images, training_actions, rewards = generate_expert_trajectory(
+          args.env_name, args.batch_size, num_processes=10)
+    reward_batch = sum(rewards)
+    print (reward_batch / args.batch_size)
 
-        episode_images.append(image)
-        
-        training_images.append(episode_images)
-        training_actions.append(episode_actions)
-        
-    print (reward_batch/ num_episodes)
-    
     # After having #batch_size trajectories, make the python array into numpy array
     images_max_len = max_length(training_images)
     actions_max_len = max_length(training_actions)
     images_mask = [[1] * (len(array) - 1) + [0] * (images_max_len - len(array))
                    for array in training_images]
-    
+
     # Here's something a little twisted, we want the trajectories in one batch to be the same
     # length. So we want to pad zero to the ends of short trajectories. However, the forward
     # and backward trajectories are shifted by one. So we need to create and pad the fwd/bwd
