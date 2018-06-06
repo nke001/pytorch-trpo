@@ -68,11 +68,10 @@ def _generate_trajectory(env_name, train_on_image, queue_images, queue_actions, 
   queue_actions.put(episode_actions)
   queue_reward.put(reward_sum)
 
-def generate_expert_trajectory(env_name, batch_size, num_processes):
+def generate_expert_trajectory(env_name, batch_size, p):
   """ return training_images, training_actions just as
   what was done in the original zforcing_main file. But in parallel.
   """
-  p = Pool(num_processes)
   m = Manager()
   queue_images = m.Queue()
   queue_actions = m.Queue()
