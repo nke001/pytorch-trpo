@@ -5,7 +5,7 @@ from collections import namedtuple
 # https://github.com/pytorch/tutorials/blob/master/Reinforcement%20(Q-)Learning%20with%20PyTorch.ipynb
 
 Transition = namedtuple('Transition', ('state', 'action', 'mask', 'next_state',
-                                       'reward', 'image'))
+                                       'reward'))
 
 
 class Memory(object):
