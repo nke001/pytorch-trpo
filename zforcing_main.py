@@ -13,7 +13,7 @@ from torch.autograd import Variable
 from trpo import trpo_step
 from utils import *
 from rl_zforcing import ZForcing
-from generate_expert import generate_expert_trajectory
+from generate_expert import generate_expert_trajectory, initialize_pool
 import cv2
 import random
 import scipy.misc
@@ -196,16 +196,13 @@ def image_resize(image):
 def expert_sample():
     import ipdb; ipdb.set_trace()
 
-
-num_processes = 10
-p = Pool(num_processes)
+initialize_pool(args.env_name)
 for iteration in count(1):
     training_images = []
     training_actions = []
 
     zf.train()
-    training_images, training_actions, rewards = generate_expert_trajectory(
-          args.env_name, args.batch_size, p)
+    training_images, training_actions, rewards = generate_expert_trajectory(args.batch_size)
     reward_batch = sum(rewards)
     print (reward_batch / args.batch_size)
 
