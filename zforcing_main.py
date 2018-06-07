@@ -45,9 +45,9 @@ parser.add_argument('--bwd-weight', type=float, default=0.,
                     help='weight for bwd teacher forcing loss')
 parser.add_argument('--kld-weight-start', type=float, default=0.,
                     help='start weight for kl divergence between prior and posterior z loss')
-parser.add_argument('--kld-step', type=float, default=5e-5,
+parser.add_argument('--kld-step', type=float, default=1e-6,
                     help='step size to anneal kld_weight per iteration')
-parser.add_argument('--aux-step', type=float, default=5e-5,
+parser.add_argument('--aux-step', type=float, default=1e-6,
                     help='step size to anneal aux_weight per iteration')
 
 parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
