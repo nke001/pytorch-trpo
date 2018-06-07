@@ -7,7 +7,7 @@ def pool_initializer(env_name):
   import torch
   from torch.autograd import Variable
   import numpy as np
-  import free_mjc
+  #import free_mjc
   import gym
   from models import Policy, Value
   import cv2
