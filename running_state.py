@@ -53,19 +53,17 @@ class ZFilter:
         self.demean = demean
         self.destd = destd
         self.clip = clip
-        self.lock = threading.RLock()
         self.rs = RunningStat(shape)
 
     def __call__(self, x, update=True):
-        with self.lock:
-            if update: self.rs.push(x)
-            if self.demean:
-                x = x - self.rs.mean
-            if self.destd:
-                x = x / (self.rs.std + 1e-8)
-            if self.clip:
-                x = np.clip(x, -self.clip, self.clip)
-            return x
+        if update: self.rs.push(x)
+        if self.demean:
+            x = x - self.rs.mean
+        if self.destd:
+            x = x / (self.rs.std + 1e-8)
+        if self.clip:
+            x = np.clip(x, -self.clip, self.clip)
+        return x
 
     def output_shape(self, input_space):
         return input_space.shape
