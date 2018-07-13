@@ -68,7 +68,6 @@ torch.manual_seed(args.seed)
 policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
-import ipdb;ipdb.set_trace()
 
 filename = args.env_name + '_model/zforce_reacher_lr'+ str(args.lr) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.makedirs(filename, exist_ok=True)
@@ -107,7 +106,6 @@ def evaluate_(model):
         #print(num_episodes)
         state = env.reset()
         reward_sum = 0
-
         for t in range(10000):
             image = env.render(mode="rgb_array") 
             if num_episodes % 5 == 0:
@@ -167,7 +165,6 @@ def pad(array, length):
 def max_length(arrays):
     return max([len(array) for array in arrays])
 
-import ipdb; ipdb.set_trace()
 zf = ZForcing(emb_dim=512, rnn_dim=512, z_dim=256,
               mlp_dim=256, out_dim=num_actions * 2, z_force=True, cond_ln=True)
 
