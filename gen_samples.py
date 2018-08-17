@@ -66,7 +66,7 @@ lr = args.lr
 env = gym.make(args.env_name)
 num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
-filename = str(args.env_name) + '_num_samples_' + str(args.num_samples) + '.pkl'
+filename = str(args.env_name) + 'valid_num_samples_' + str(args.num_samples) + '.pkl'
 env.seed(args.seed)
 torch.manual_seed(args.seed)
 
@@ -157,8 +157,8 @@ for iteration in range(1):
             
             if train_on_image:
                 image = env.render(mode="rgb_array")
-                #image_filename = os.path.join(filename, 'train/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg')
-                #scipy.misc.imsave(image_filename, image)
+                image_filename = 'rendered_images/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg'
+                scipy.misc.imsave(image_filename, image)
                 image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
                 image = np.transpose(image, (2, 0, 1))
             
@@ -187,5 +187,4 @@ for iteration in range(1):
         training_images.append(episode_images)
         training_actions.append(episode_actions)
     print (reward_batch/ num_episodes)
-    import ipdb; ipdb.set_trace()
     write_samples(training_images, training_actions, filename)

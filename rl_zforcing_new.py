@@ -165,7 +165,11 @@ class ZForcing(nn.Module):
         self.z_force = z_force
         self.use_l2 = use_l2
         self.drop_grad = drop_grad
-
+        self.action_emb_size = 64
+        self.fwd_action_emb = nn.Sequential(
+            nn.Linear(2, int(self.action_emb_size/2)),
+            nn.LeakyReLU(),
+            nn.Linear(int(self.action_emb_size/2), self.action_emb_size))
         self.l2_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
         self.emb_mod = nn.Sequential(
@@ -200,6 +204,17 @@ class ZForcing(nn.Module):
             )
         self.bwd_dec_linear = nn.Linear(rnn_dim, 1024) 
         
+        self.dec_linear = nn.Linear(1344, 1024) 
+ 
+        self.dec_mod = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=1024,out_channels=128,kernel_size=5,stride=2),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=64,out_channels=32,kernel_size=6,stride=2),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=32,out_channels=3,kernel_size=6,stride=2)) 
+         
         self.bwd_dec_mod = nn.Sequential(
             nn.ConvTranspose2d(in_channels=1024,out_channels=128,kernel_size=5,stride=2),
             nn.LeakyReLU(),
@@ -226,9 +241,10 @@ class ZForcing(nn.Module):
             nn.Linear(mlp_dim, z_dim * 2))
         if cond_ln:
             self.gen_mod = nn.Sequential(
-                nn.Linear(z_dim + 2, mlp_dim),
+                nn.Linear(z_dim, mlp_dim),
                 LReLU(),
                 nn.Linear(mlp_dim, 8 * rnn_dim))
+            #self.gen_mod = nn.Linear(z_dim, rnn_dim)
         else:
             self.gen_mod = nn.Linear(z_dim, mlp_dim)
         self.aux_mod = nn.Sequential(
@@ -285,7 +301,7 @@ class ZForcing(nn.Module):
         x_fwd = x_emb.view(*x_fwd.shape[:2], self.emb_dim)
         nsteps = x_fwd.size(0)
         states = [(hidden[0][0], hidden[1][0])]
-        klds, zs, log_pz, log_qz, aux_cs = [], [], [], [], []
+        klds, zs, log_pz, log_qz, aux_cs, dec_outs = [], [], [], [], [], []
         eps = Variable(next(self.parameters()).data.new(
             nsteps, x_fwd.size(1), self.z_dim).normal_())
         big = Variable(next(self.parameters()).data.new(x_fwd.size(1)).zero_()) + 0.5
@@ -332,10 +348,11 @@ class ZForcing(nn.Module):
                 aux_step = torch.sum(pri_mu * 0., -1)
                 inf_mu, inf_logvar = pri_mu, pri_logvar
                 kld = aux_step
-            a_step = actions[step]
-            input_step = torch.cat((a_step.float(), z_step), 1)
-            i_step = self.gen_mod(input_step)
-            
+            action_step = self.fwd_action_emb(actions[step])
+            input_step = torch.cat((action_step.float(), z_step), 1)
+            input_step = torch.cat((input_step, h_step), 1)
+            #i_step = self.gen_mod(input_step)
+            i_step = self.gen_mod(z_step)
             if self.cond_ln:
                 i_step = torch.clamp(i_step, -3, 3)
                 gain_hh, bias_hh = torch.chunk(i_step, 2, 1)
@@ -348,6 +365,11 @@ class ZForcing(nn.Module):
             else:
                 h_new, c_new = self.fwd_mod(torch.cat((i_step, x_step), 1),
                                             (h_step, c_step))
+            #maybe should concat h_new and also i_step together
+            dec_h = self.dec_linear(torch.cat((h_new, input_step),1))
+            dec_h = dec_h.reshape(-1, 1024, 1,1)
+            dec_out = self.dec_mod(dec_h)
+            dec_outs.append(dec_out)
             states.append((h_new, c_new))
             klds.append(kld)
             zs.append(z_step)
@@ -360,11 +382,11 @@ class ZForcing(nn.Module):
         log_pz = torch.stack(log_pz, 0)
         log_qz = torch.stack(log_qz, 0)
         zs = torch.stack(zs, 0)
-
         outputs = [s[0] for s in states[1:]]
         outputs = torch.stack(outputs, 0)
         outputs = self.fwd_out_mod(outputs)
-        return outputs, states[1:], klds, aux_cs, zs, log_pz, log_qz
+        dec_outs = torch.stack(dec_outs, 0)
+        return outputs, states[1:], klds, aux_cs, zs, log_pz, log_qz, dec_outs
 
     def infer(self, x, hidden):
         '''Infer latent variables for a given batch of sentences ``x''.
@@ -372,7 +394,7 @@ class ZForcing(nn.Module):
         x_ = x[:-1]
         y_ = x[1:]
         bwd_states, bwd_outputs, dec_bwd_outputs, _ = self.bwd_pass(x_, y_, hidden)
-        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz = self.fwd_pass(
+        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz, dec_outs = self.fwd_pass(
                 x_, hidden, bwd_states=bwd_states)
         return zs
 
@@ -401,56 +423,29 @@ class ZForcing(nn.Module):
         outputs = outputs.index_select(0, idx)
         return states, outputs, bwd_l2_loss
     
-    def generate_onestep(self, x_fwd, x_mask, hidden, action=None):
+    def generate_onestep(self, x_fwd, x_mask, hidden, return_decode=False, action=None):
         nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)
-        #bwd_states, bwd_outputs = self.bwd_pass(x_bwd, hidden)
-        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz = self.fwd_pass(
+        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz, dec_outs = self.fwd_pass(
             x_fwd, hidden, actions=action, bwd_states=None, eval_=True)
         out_mu, out_logvar = torch.chunk(fwd_outputs, 2, -1) 
         hidden = (fwd_states[0][0].unsqueeze(0), fwd_states[0][1].unsqueeze(0))
-        return (out_mu, out_logvar, hidden)
-        
-        '''kld = (klds * x_mask).sum(0)
-        log_pz = (log_pz * x_mask).sum(0)
-        log_qz = (log_qz * x_mask).sum(0)
-        aux_nll = (aux_nll * x_mask).sum(0)
-        if self.out_type == 'gaussian':
-            out_mu, out_logvar = torch.chunk(fwd_outputs, 2, -1)
-            fwd_nll = -log_prob_gaussian(y, out_mu, out_logvar)
-            fwd_nll = (fwd_nll * x_mask).sum(0)
-            out_mu, out_logvar = torch.chunk(bwd_outputs, 2, -1)
-            bwd_nll = -log_prob_gaussian(y, out_mu, out_logvar)
-            bwd_nll = (bwd_nll * x_mask).sum(0)
-        elif self.out_type == 'softmax':
-            fwd_out = fwd_outputs.view(nsteps * nbatch, self.out_dim)
-            fwd_out = F.log_softmax(fwd_out)
-            y = y.view(-1, 1)
-            fwd_nll = torch.gather(fwd_out, 1, y).squeeze(1)
-            fwd_nll = fwd_nll.view(nsteps, nbatch)
-            fwd_nll = -(fwd_nll * x_mask).sum(0)
-            bwd_out = bwd_outputs.view(nsteps * nbatch, self.out_dim)
-            bwd_out = F.log_softmax(bwd_out)
-            y = y.view(-1, 1)
-            bwd_nll = torch.gather(bwd_out, 1, y).squeeze(1)
-            bwd_nll = -bwd_nll.view(nsteps, nbatch)
-            bwd_nll = (bwd_nll * x_mask).sum(0)
-
-        if return_stats:
-            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz
-        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean() '''
+        if return_decode:
+            return (out_mu, out_logvar, hidden, dec_outs)
+        else:
+            return (out_mu, out_logvar, hidden)
  
 
     def forward(self, x_fwd, x_bwd, y, x_mask, hidden, fwd_dec=False, return_stats=False):
         nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)
         bwd_states, bwd_outputs, bwd_l2_loss = self.bwd_pass(x_bwd, x_fwd, hidden)
         actions = torch.cat((torch.zeros(y.shape[1:]).unsqueeze(0).cuda().float(),y[:-1]),0)
-        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz = self.fwd_pass(
+        fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz, dec_outs = self.fwd_pass(
             x_fwd, hidden, actions=actions, bwd_states=bwd_states)
         kld = (klds * x_mask).sum(0)
         log_pz = (log_pz * x_mask).sum(0)
         log_qz = (log_qz * x_mask).sum(0)
         aux_nll = (aux_nll * x_mask).sum(0)
-        
+        aux_fwd_l2 = self.l2_loss(dec_outs, x_bwd)
         # compute loss for backward decoder
         #bwd_l2_loss = self.l2_loss(dec_bwd_outputs.view_as(x_bwd_target), x_bwd_target)
         
@@ -477,5 +472,5 @@ class ZForcing(nn.Module):
             bwd_nll = (bwd_nll * x_mask).sum(0)
 
         if return_stats:
-            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz, bwd_l2_loss
-        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean(), bwd_l2_loss
+            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz, bwd_l2_loss, aux_fwd_l2
+        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean(), bwd_l2_loss, aux_fwd_l2

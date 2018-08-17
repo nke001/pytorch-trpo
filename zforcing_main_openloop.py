@@ -52,14 +52,16 @@ parser.add_argument('--kld-step', type=float, default=1e-6,
                     help='step size to anneal kld_weight per iteration')
 parser.add_argument('--aux-step', type=float, default=1e-6,
                     help='step size to anneal aux_weight per iteration')
-
+parser.add_argument('--l2-weight', type=float, default=1.,
+                    help='l2 weight for foward model')
 parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
                     help='evaluation interaval (default: 50)')
 
 parser.add_argument('--val-batch-size', type=int, default=50, metavar='N',
                     help='random seed (default: 1)')
-
-parser.add_argument('--zf-file', type=str, default='Reacher-v2-model-based/zforce_reacher_model_base_fwd_dec_0.5_lr0.0001_bwd_weight_0.0_aux_w_0.0005_kld_w_0.25_170/student.pkl', help='reloading zforcing file')
+parser.add_argument('--k', type=int, default=5, 
+                    help='k step ahead predication')
+parser.add_argument('--zf-file', type=str, default='/private/home/nke001/pytorch-trpo/Reacher-v2hybrid-model/zforce_reacher_model_base_10k_0.0_lr0.0001_fwd_l2w_0.0_aux_w_0.0_kld_w_0.0_86/student.pkl', help='reloading zforcing file')
 args = parser.parse_args()
 lr = args.lr
 env = gym.make(args.env_name)
@@ -69,16 +71,6 @@ num_actions = env.action_space.shape[0]
 env.seed(args.seed)
 torch.manual_seed(args.seed)
 
-filename = args.env_name + '-model-based/zforce_reacher_model_based_fwd_1.0_lr'+ str(args.lr) + '_bwd_weight_' + str(args.bwd_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
-os.makedirs(filename, exist_ok=True)
-train_folder = os.path.join(filename, 'train')
-test_folder = os.path.join(filename, 'test')
-os.makedirs(train_folder, exist_ok=True)
-os.makedirs(test_folder, exist_ok=True)
-zforce_filename = os.path.join(filename, 'student.pkl')
-log_file = os.path.join(filename, 'log.txt')
-
-train_on_image = True
 
 def save_param(model, model_file_name):
     torch.save(model.state_dict(), model_file_name)
@@ -150,9 +142,6 @@ def evaluate_(model):
         reward_sum = 0
         for t in range(10000):
             image = env.render(mode="rgb_array") 
-            if num_episodes % 5 == 0:
-                image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
-                scipy.misc.imsave(image_file, image)
             action = torch.from_numpy(action).float().cuda()
             image = image_resize(image)
             image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda()
@@ -182,9 +171,17 @@ def evaluate_(model):
 
     print ('test reward is ', reward_batch/ num_episodes)
     log_line = 'test_reward is , ' + str(reward_batch/ num_episodes)
-    with open(log_file, 'a') as f:
-        f.write(log_line)
     return (reward_batch/num_episodes) 
+
+def sample_action(action_mu, action_var):
+    action_mu = action_mu.squeeze(0).squeeze(0)                                                                                                                                                              
+    action_logvar = action_var.squeeze(0).squeeze(0)                                                                                                                                                         
+    std = action_logvar.mul(0.5).exp_()                                                                                                                                                                      
+                                                                                                                                                                                                                     
+    eps = std.data.new(std.size()).normal_()                                                                                                                                                                 
+
+    action = eps.mul(std).add_(action_mu)  
+    return action
 
 def k_step_evaluate(model, k):
     # evaluate how well model does 
@@ -205,11 +202,8 @@ def k_step_evaluate(model, k):
         
         mask = torch.ones([1,1])
          
-        for t in range(1000):
+        for t in range(50):
             image = env.render(mode="rgb_array")
-            if num_episodes % 5 == 0:
-                image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
-                scipy.misc.imsave(image_file, image)
             action = torch.from_numpy(action).float().cuda()
             image = image_resize(image)
             image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda() 
@@ -223,6 +217,7 @@ def k_step_evaluate(model, k):
                 #image = image_resize(image)
                 action_mu, action_var, hidden, image_tildt = zf.generate_onestep(image_tildt, mask, hidden, return_decode=True, action = action.unsqueeze(0).unsqueeze(0))
                 rollouts.append(image_tildt)
+                action = sample_action(action_mu, action_var) 
             rollouts = [] 
             action_mu, action_var, hidden, _ = zf.generate_onestep(image, mask, true_hidden, return_decode=True, action = action.unsqueeze(0).unsqueeze(0))
             all_rollouts.append(rollouts) 
@@ -231,15 +226,7 @@ def k_step_evaluate(model, k):
                 k_loss, all_rollouts = evaluate_rollouts(true_traj, all_rollouts, k)
                 # start evaluating the k-step rollouts
                 k_step_loss.append(k_loss)
-
-            action_mu = action_mu.squeeze(0).squeeze(0)
-            action_logvar = action_var.squeeze(0).squeeze(0)
-            std = action_logvar.mul(0.5).exp_()
-
-            eps = std.data.new(std.size()).normal_()
-
-            action = eps.mul(std).add_(action_mu)
-
+            action = sample_action(action_mu, action_var)
             action = action.cpu().data.numpy()
 
             next_state, reward, done, _ = env.step(action)                                                                                                                                                           
@@ -251,13 +238,11 @@ def k_step_evaluate(model, k):
                                                                                                                                                                                                                      
         num_episodes += 1                                                                                                                                                                                            
         reward_batch += reward_sum                                                                                                                                                                                   
-                                                                                                                                                                                                                     
+        if num_episodes % 5 ==0:
+            print ('done with ', num_episodes)                                                                                                                                                                                                         
     print ('test reward is ', reward_batch/ num_episodes)                                                                                                                                                            
     #print ('average action diff norm is ', all_action_diff / num_episodes / 50)        
     print ('average k step predication loss is ', torch.stack(k_step_loss).mean().item())
-    log_line = 'test_reward is , ' + str(reward_batch/ num_episodes)                                                                                                                                                 
-    with open(log_file, 'a') as f:                                                                                                                                                                                   
-        f.write(log_line)                                                                                                                                                                                            
     return (reward_batch/num_episodes)  
 
 running_state = ZFilter((num_inputs,), clip=5)
@@ -299,5 +284,5 @@ for episode in range(num_episodes):
         zf.float().cuda()
         hidden = zf.init_hidden(args.batch_size)
 
-        k_step_loss = k_step_evaluate(zf, 5)
-        test_reward = evaluate_(zf)
+        k_step_loss = k_step_evaluate(zf, args.k)
+        #test_reward = evaluate_(zf)

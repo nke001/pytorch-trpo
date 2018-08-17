@@ -46,6 +46,9 @@ parser.add_argument('--bwd-weight', type=float, default=0.,
                     help='weight for bwd teacher forcing loss')
 parser.add_argument('--bwd-l2-weight', type=float, default=1e-3,
                     help='weight for bwd l2 decoding loss')
+parser.add_argument('--l2-weight', type=float, default=1.,
+                    help='weight for fwd l2 decoding loss')
+
 parser.add_argument('--kld-weight-start', type=float, default=0.,
                     help='start weight for kl divergence between prior and posterior z loss')
 parser.add_argument('--kld-step', type=float, default=1e-6,
@@ -56,7 +59,7 @@ parser.add_argument('--aux-step', type=float, default=1e-6,
 parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
                     help='evaluation interaval (default: 50)')
 
-parser.add_argument('--val-batch-size', type=int, default=50, metavar='N',
+parser.add_argument('--val-batch-size', type=int, default=100, metavar='N',
                     help='random seed (default: 1)')
 
 args = parser.parse_args()
@@ -72,7 +75,7 @@ policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
 
-filename = args.env_name + '-model-based/zforce_reacher_decode_state_model_based_lr'+ str(args.lr) + '_bwd_weight_' + str(args.bwd_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
+filename = args.env_name + 'hybrid-model/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.makedirs(filename, exist_ok=True)
 train_folder = os.path.join(filename, 'train')
 test_folder = os.path.join(filename, 'test')
@@ -137,14 +140,13 @@ def evaluate_(model):
     model.cuda()
     hidden = zf.init_hidden(1)
     all_action_diff = 0
-    zf.eval()
     action = np.asarray([0.,0.])
     # Each iteration first collect #batch_size episodes
     while num_episodes < args.val_batch_size:
         #print(num_episodes)
         state = env.reset()
         reward_sum = 0
-        for t in range(10000):
+        for t in range(1000):
             image = env.render(mode="rgb_array") 
             if num_episodes % 5 == 0:
                 image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
@@ -239,7 +241,6 @@ zf.cuda()
 hist_test_reward = -30.0
 
 #evaluate_(zf)
-#import ipdb; ipdb.set_trace()
 
 def image_resize(image):
     image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
@@ -295,11 +296,11 @@ for episode in range(num_episodes):
         fwd_opt.zero_grad()
         bwd_opt.zero_grad()
     
-        fwd_nll, bwd_nll, aux_nll, kld, l2_loss = zf(x_fwd, x_bwd, y, x_mask, hidden)
+        fwd_nll, bwd_nll, aux_nll, kld, l2_loss, aux_fwd_l2 = zf(x_fwd, x_bwd, y, x_mask, hidden)
         bwd_nll = (aux_weight > 0.) * (bwd_weight * bwd_nll)
         aux_nll = aux_weight * aux_nll
-        all_loss = fwd_nll + bwd_nll + aux_nll + kld_weight * kld + args.bwd_l2_weight * l2_loss
-        fwd_loss = (fwd_nll + aux_nll + kld_weight * kld)
+        all_loss = fwd_nll + bwd_nll + aux_nll + kld_weight * kld + 1. * aux_fwd_l2 + args.bwd_l2_weight * l2_loss
+        fwd_loss = (fwd_nll + aux_nll + kld_weight * kld) + args.l2_weight * aux_fwd_l2
         bwd_loss = bwd_nll + args.bwd_l2_weight * l2_loss
         # anneal kld cost
         kld_weight += args.kld_step
@@ -310,11 +311,12 @@ for episode in range(num_episodes):
         else:
             aux_weight -= args.aux_step
             aux_weight = max(aux_weight, args.aux_weight_end)
-        log_line ='Episode: %d, Iteration: %d, All loss is %.3f , foward loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f, l2 loss is %.3f' % (
+        log_line ='Episode: %d, Iteration: %d, All loss is %.3f , foward loss is %.3f, fwd decoding loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f, l2 loss is %.3f' % (
             episode,
             iteration,
             all_loss.item(),
             fwd_nll.item(),
+            aux_fwd_l2.item(),
             bwd_nll.item(),
             aux_nll.item(),
             kld.item(),
