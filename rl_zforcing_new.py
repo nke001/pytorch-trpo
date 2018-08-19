@@ -204,10 +204,10 @@ class ZForcing(nn.Module):
             )
         self.bwd_dec_linear = nn.Linear(rnn_dim, 500) 
         
-        self.dec_linear = nn.Linear(1344, 768) 
+        self.dec_linear = nn.Linear(1344, 500) 
  
         self.dec_mod = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=768,out_channels=128,kernel_size=5,stride=2),
+            nn.ConvTranspose2d(in_channels=250,out_channels=128,kernel_size=5,stride=2),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
             nn.LeakyReLU(),
@@ -416,7 +416,7 @@ class ZForcing(nn.Module):
         dec_states = self.bwd_dec_linear(states) 
         dec_states = dec_states.reshape(-1, 250, 1,2)
         dec_outputs = self.bwd_dec_mod(dec_states)
-        bwd_l2_loss = self.l2_loss(dec_outputs.view_as(y_bwd), y_bwd)  
+        bwd_l2_loss = self.l1_loss(dec_outputs.view_as(y_bwd), y_bwd)  
         outputs = self.bwd_out_mod(states)
 
         states = states.index_select(0, idx)
@@ -445,7 +445,7 @@ class ZForcing(nn.Module):
         log_pz = (log_pz * x_mask).sum(0)
         log_qz = (log_qz * x_mask).sum(0)
         aux_nll = (aux_nll * x_mask).sum(0)
-        aux_fwd_l2 = self.l2_loss(dec_outs, x_bwd)
+        aux_fwd_l2 = self.l1_loss(dec_outs, x_bwd)
         # compute loss for backward decoder
         #bwd_l2_loss = self.l2_loss(dec_bwd_outputs.view_as(x_bwd_target), x_bwd_target)
         

@@ -75,7 +75,7 @@ policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
 
-filename = args.env_name + 'hybrid-model/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
+filename = args.env_name + '_version1.0_L1loss/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.makedirs(filename, exist_ok=True)
 train_folder = os.path.join(filename, 'train')
 test_folder = os.path.join(filename, 'test')
@@ -121,17 +121,8 @@ def print_norm(rnn):
         param = param_tuple[1]
         if 'bwd' in name:
             norm = param.grad.norm(2).data[0]/np.sqrt(np.prod(param.size()))
-            #if norm == 0.0:
-            #    import ipdb; ipdb.set_trace()
             param_norm.append(norm)
     return param_norm
-    #for param in rnn.parameters():
-    #    import ipdb; ipdb.set_trace()
-    #    norm = param.grad.norm(2).data[0]/ numpy.sqrt(numpy.prod(param.size()))
-    #    #print param.size()
-    #    param_norm.append(norm)
-    #return param_norm 
-
 
 def evaluate_(model):
     # evaluate how well model does 
@@ -148,11 +139,13 @@ def evaluate_(model):
         reward_sum = 0
         for t in range(1000):
             image = env.render(mode="rgb_array") 
+            image =  image[48:112, 30:110]
             if num_episodes % 5 == 0:
                 image_file =  os.path.join(filename, 'test/episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
+                #write_image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC) 
                 scipy.misc.imsave(image_file, image)
             action = torch.from_numpy(action).float().cuda()
-            image = image_resize(image)
+            image = np.asarray(np.transpose(image, (2,0,1)), dtype=float)
             image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda()
             mask = torch.ones([1,1])
             action_mu, action_var, hidden = zf.generate_onestep(image, mask, hidden, action = action.unsqueeze(0).unsqueeze(0)) 
@@ -234,8 +227,6 @@ aux_weight = args.aux_weight_start
 bwd_weight = args.bwd_weight
 bwd_l2_weight = args.bwd_l2_weight
 
-#import ipdb.set_trace()
-#zf = load_param(zf, 'zforce_reacher_64.pkl')
 zf.float()
 zf.cuda()
 hist_test_reward = -30.0
@@ -244,11 +235,11 @@ hist_test_reward = -30.0
 
 def image_resize(image):
     image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+    
     image = np.transpose(image, (2, 0, 1))
     return image
 
 #zf.eval()
-#evaluate_(zf)
 
 zf.train() 
 

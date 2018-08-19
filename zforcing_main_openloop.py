@@ -216,6 +216,10 @@ def k_step_evaluate(model, k):
                 # do k-step rollouts
                 #image = image_resize(image)
                 action_mu, action_var, hidden, image_tildt = zf.generate_onestep(image_tildt, mask, hidden, return_decode=True, action = action.unsqueeze(0).unsqueeze(0))
+                image_file =  os.path.join('rollouts_new', 'episode_'+ str(num_episodes) +  '_t_' + str(t)+'.jpg')
+                write_image = np.transpose(image_tildt.cpu().detach().squeeze(0).squeeze(0).numpy(), (1,2,0))
+                scipy.misc.imsave(image_file, write_image)
+          
                 rollouts.append(image_tildt)
                 action = sample_action(action_mu, action_var) 
             rollouts = [] 
@@ -265,7 +269,6 @@ zf.float()
 zf.cuda()
 
 #evaluate_(zf)
-#import ipdb; ipdb.set_trace()
 
 def image_resize(image):
     image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
