@@ -182,11 +182,11 @@ class ZForcing(nn.Module):
             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2),
             nn.LeakyReLU(),
             #nn.AvgPool2d(4),
-            View(-1, 1024),
-            nn.Linear(1024, emb_dim),
+            View(-1, 1536),
+            nn.Linear(1536, emb_dim),
             #nn.Dropout(dropout)
             )
-
+#
 
         self.bwd_emb_mod = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2),                                                                                                                           
@@ -198,16 +198,16 @@ class ZForcing(nn.Module):
             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2),                                                                                                                        
             nn.LeakyReLU(),                                                                                                                                                                                          
             #nn.AvgPool2d(4),                                                                                                                                                                                        
-            View(-1, 1024),                                                                                                                                                                                          
-            nn.Linear(1024, emb_dim),                                                                                                                                                                                
+            View(-1, 1536),                                                                                                                                                                                          
+            nn.Linear(1536, emb_dim),                                                                                                                                                                                
             #nn.Dropout(dropout))    
             )
-        self.bwd_dec_linear = nn.Linear(rnn_dim, 1024) 
+        self.bwd_dec_linear = nn.Linear(rnn_dim, 500) 
         
-        self.dec_linear = nn.Linear(1344, 1024) 
+        self.dec_linear = nn.Linear(1344, 768) 
  
         self.dec_mod = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=1024,out_channels=128,kernel_size=5,stride=2),
+            nn.ConvTranspose2d(in_channels=768,out_channels=128,kernel_size=5,stride=2),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
             nn.LeakyReLU(),
@@ -216,7 +216,7 @@ class ZForcing(nn.Module):
             nn.ConvTranspose2d(in_channels=32,out_channels=3,kernel_size=6,stride=2)) 
          
         self.bwd_dec_mod = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=1024,out_channels=128,kernel_size=5,stride=2),
+            nn.ConvTranspose2d(in_channels=250,out_channels=128,kernel_size=5,stride=2),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
             nn.LeakyReLU(),
@@ -367,7 +367,7 @@ class ZForcing(nn.Module):
                                             (h_step, c_step))
             #maybe should concat h_new and also i_step together
             dec_h = self.dec_linear(torch.cat((h_new, input_step),1))
-            dec_h = dec_h.reshape(-1, 1024, 1,1)
+            dec_h = dec_h.reshape(-1, 250, 1,2)
             dec_out = self.dec_mod(dec_h)
             dec_outs.append(dec_out)
             states.append((h_new, c_new))
@@ -414,7 +414,7 @@ class ZForcing(nn.Module):
         states, _ = self.bwd_mod(x_bwd, hidden)
         #dec_states = states[:,:,None,None]
         dec_states = self.bwd_dec_linear(states) 
-        dec_states = dec_states.reshape(-1, 1024, 1,1)
+        dec_states = dec_states.reshape(-1, 250, 1,2)
         dec_outputs = self.bwd_dec_mod(dec_states)
         bwd_l2_loss = self.l2_loss(dec_outputs.view_as(y_bwd), y_bwd)  
         outputs = self.bwd_out_mod(states)

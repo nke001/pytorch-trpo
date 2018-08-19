@@ -23,7 +23,7 @@ torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
 from pyvirtualdisplay import Display
-display_ = Display(visible=0, size=(550, 500))
+display_ = Display(visible=0, size=(150, 150))
 display_.start()
 
 torch.set_default_tensor_type('torch.DoubleTensor')
@@ -157,18 +157,19 @@ for iteration in range(1):
             
             if train_on_image:
                 image = env.render(mode="rgb_array")
-                image_filename = 'rendered_images/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg'
-                scipy.misc.imsave(image_filename, image)
-                image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
-                image = np.transpose(image, (2, 0, 1))
-            
+                crop_img = image[48:112, 30:110]
+                image_filename = 'expert_images/episode_'+ str(num_episodes) + '_t_' + str(t)+'.jpg'
+                #scipy.misc.imsave(image_filename, crop_img)
+                #crop_img = cv2.resize(crop_img, dsize=(64,64), interpolation=cv2.INTER_CUBIC) 
+                crop_img = np.transpose(crop_img, (2, 0, 1))
+                #scipy.misc.imsave(image_filename, crop_img)
 
             next_state, reward, done, _ = env.step(action)
             
             reward_sum += reward
             next_state = running_state_test(next_state)
             
-            episode_images.append(image)
+            episode_images.append(crop_img)
             episode_actions.append(action)
             
             state = next_state
@@ -180,9 +181,9 @@ for iteration in range(1):
         if (num_episodes > 0 ) and (num_episodes % 100 == 0):
             print('done ', num_episodes) 
         image = env.render(mode="rgb_array")
-        image = image_resize(image)
-
-        episode_images.append(image)
+        #image = image_resize(image)
+        crop_img = image[48:112, 30:110]
+        episode_images.append(np.transpose(crop_img,(2,0,1)))
         
         training_images.append(episode_images)
         training_actions.append(episode_actions)
