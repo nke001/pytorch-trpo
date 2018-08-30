@@ -11,6 +11,8 @@ vim /private/home/nke001/anaconda3/lib/python3.6/site-packages/gym/envs/mujoco/m
 
 vim /anaconda3/envs/py3.6_cuda9.0/lib/python3.6/site-packages/mujoco_py/generated
 
+cd /private/home/nke001/anaconda3/envs/py3.6_cuda9.0/lib/python3.6/site-packages/gym/envs/mujoc
+
 python zforcing_main_aux_new.py --batch-size 32 --aux-weight-start 0.0001  --aux-weight-end 0.0001 --kld-step 0.00005 --kld-weight-start 0.2 --bwd-weight 0.0   --lr 1e-4 --bwd-l2-
 weight 1. --batch-size 32 --l2-weight 0.2
 

@@ -174,10 +174,13 @@ class ZForcing(nn.Module):
         self.l1_loss = nn.L1Loss()
         self.emb_mod = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2),
+            nn.BatchNorm2d(32),
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),
+            nn.BatchNorm2d(64),
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, stride=2),
+            nn.BatchNorm2d(128),
             nn.LeakyReLU(),
             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2),
             nn.LeakyReLU(),
@@ -190,10 +193,13 @@ class ZForcing(nn.Module):
 
         self.bwd_emb_mod = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2),                                                                                                                           
+            nn.BatchNorm2d(32),
             nn.LeakyReLU(),                                                                                                                                                                                          
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),                                                                                                                          
+            nn.BatchNorm2d(64),
             nn.LeakyReLU(),                                                                                                                                                                                          
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, stride=2),                                                                                                                         
+            nn.BatchNorm2d(128),
             nn.LeakyReLU(),                                                                                                                                                                                          
             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2),                                                                                                                        
             nn.LeakyReLU(),                                                                                                                                                                                          
@@ -202,30 +208,35 @@ class ZForcing(nn.Module):
             nn.Linear(1536, emb_dim),                                                                                                                                                                                
             #nn.Dropout(dropout))    
             )
-        self.bwd_dec_linear = nn.Linear(rnn_dim, 500) 
+        self.bwd_dec_linear = nn.Linear(rnn_dim, 800) 
         
-        self.dec_linear = nn.Linear(1344, 500) 
+        self.dec_linear = nn.Linear(832, 800) 
  
         self.dec_mod = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=250,out_channels=128,kernel_size=5,stride=2),
+            nn.ConvTranspose2d(in_channels=400,out_channels=128,kernel_size=5,stride=2),
+            nn.BatchNorm2d(128),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
-            nn.LeakyReLU(),
-            nn.ConvTranspose2d(in_channels=64,out_channels=32,kernel_size=6,stride=2),
-            nn.LeakyReLU(),
-            nn.ConvTranspose2d(in_channels=32,out_channels=3,kernel_size=6,stride=2)) 
-         
-        self.bwd_dec_mod = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=250,out_channels=128,kernel_size=5,stride=2),
-            nn.LeakyReLU(),
-            nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
+            nn.BatchNorm2d(64),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=64,out_channels=32,kernel_size=6,stride=2),
             nn.LeakyReLU(),
             nn.ConvTranspose2d(in_channels=32,out_channels=3,kernel_size=6,stride=2),
+            nn.LeakyReLU()
+            ) 
+        self.bwd_dec_mod = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=400,out_channels=128,kernel_size=5,stride=2),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=128,out_channels=64,kernel_size=5,stride=2),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=64,out_channels=32,kernel_size=6,stride=2),
+            nn.LeakyReLU(),
+            nn.ConvTranspose2d(in_channels=32,out_channels=3,kernel_size=6,stride=2),
+            nn.LeakyReLU()
             #nn.Sigmoid()
             )
-
         self.bwd_mod = nn.LSTM(emb_dim, rnn_dim, nlayers)
         nn.init.orthogonal(self.bwd_mod.weight_hh_l0.data)
         self.fwd_mod = LSTMCell(
@@ -350,7 +361,7 @@ class ZForcing(nn.Module):
                 kld = aux_step
             action_step = self.fwd_action_emb(actions[step])
             input_step = torch.cat((action_step.float(), z_step), 1)
-            input_step = torch.cat((input_step, h_step), 1)
+            #input_step = torch.cat((input_step, h_step), 1)
             #i_step = self.gen_mod(input_step)
             i_step = self.gen_mod(z_step)
             if self.cond_ln:
@@ -367,7 +378,7 @@ class ZForcing(nn.Module):
                                             (h_step, c_step))
             #maybe should concat h_new and also i_step together
             dec_h = self.dec_linear(torch.cat((h_new, input_step),1))
-            dec_h = dec_h.reshape(-1, 250, 1,2)
+            dec_h = dec_h.reshape(-1, 400, 1,2)
             dec_out = self.dec_mod(dec_h)
             dec_outs.append(dec_out)
             states.append((h_new, c_new))
@@ -414,9 +425,10 @@ class ZForcing(nn.Module):
         states, _ = self.bwd_mod(x_bwd, hidden)
         #dec_states = states[:,:,None,None]
         dec_states = self.bwd_dec_linear(states) 
-        dec_states = dec_states.reshape(-1, 250, 1,2)
+        dec_states = dec_states.reshape(-1, 400, 1,2)
         dec_outputs = self.bwd_dec_mod(dec_states)
-        bwd_l2_loss = self.l1_loss(dec_outputs.view_as(y_bwd), y_bwd)  
+        #import ipdb; ipdb.set_trace()
+        bwd_l2_loss = self.l2_loss(dec_outputs.view_as(y_bwd), y_bwd)  
         outputs = self.bwd_out_mod(states)
 
         states = states.index_select(0, idx)
@@ -445,7 +457,7 @@ class ZForcing(nn.Module):
         log_pz = (log_pz * x_mask).sum(0)
         log_qz = (log_qz * x_mask).sum(0)
         aux_nll = (aux_nll * x_mask).sum(0)
-        aux_fwd_l2 = self.l1_loss(dec_outs, x_bwd)
+        aux_fwd_l2 = self.l2_loss(dec_outs, x_bwd)
         # compute loss for backward decoder
         #bwd_l2_loss = self.l2_loss(dec_bwd_outputs.view_as(x_bwd_target), x_bwd_target)
         

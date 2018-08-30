@@ -144,6 +144,7 @@ def evaluate_(model):
             image = env.render(mode="rgb_array") 
             action = torch.from_numpy(action).float().cuda()
             image = image_resize(image)
+            import ipdb; ipdb.set_trace()
             image = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float().cuda()
             mask = torch.ones([1,1])
             action_mu, action_var, hidden = zf.generate_onestep(image, mask, hidden, action = action.unsqueeze(0).unsqueeze(0)) 
@@ -271,7 +272,8 @@ zf.cuda()
 #evaluate_(zf)
 
 def image_resize(image):
-    image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+    #image = cv2.resize(image, dsize=(64, 64), interpolation=cv2.INTER_CUBIC)
+    image =  np.array(image[48:112, 30:110], dtype=float)
     image = np.transpose(image, (2, 0, 1))
     return image
 

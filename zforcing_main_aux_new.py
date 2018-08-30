@@ -75,7 +75,7 @@ policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
 
-filename = args.env_name + '_version1.0_L1loss/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
+filename = args.env_name + '_version1.5_12k_BN/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.makedirs(filename, exist_ok=True)
 train_folder = os.path.join(filename, 'train')
 test_folder = os.path.join(filename, 'test')
@@ -230,7 +230,7 @@ bwd_l2_weight = args.bwd_l2_weight
 zf.float()
 zf.cuda()
 hist_test_reward = -30.0
-
+hist_aux_loss = 5000.0
 #evaluate_(zf)
 
 def image_resize(image):
@@ -243,13 +243,13 @@ def image_resize(image):
 
 zf.train() 
 
-data_file = 'data/Reacher-v2_num_samples_10000.pkl'
+data_file = 'data/Reacher-v2_num_samples_12000.pkl'
 all_data = load_samples(data_file)
 all_training_images, all_training_actions = [list(t) for t in zip(*all_data)]
 
 num_samples = len(all_training_actions)
 
-num_episodes = 50
+num_episodes = 150
 
 for episode in range(num_episodes):
     
@@ -296,13 +296,14 @@ for episode in range(num_episodes):
         # anneal kld cost
         kld_weight += args.kld_step
         kld_weight = min(kld_weight, 1.)
+        aux_loss = l2_loss
         if args.aux_weight_start < args.aux_weight_end:
             aux_weight += args.aux_step
             aux_weight = min(aux_weight, args.aux_weight_end)
         else:
             aux_weight -= args.aux_step
             aux_weight = max(aux_weight, args.aux_weight_end)
-        log_line ='Episode: %d, Iteration: %d, All loss is %.3f , foward loss is %.3f, fwd decoding loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f, l2 loss is %.3f' % (
+        log_line ='Episode: %d, Iteration: %d, BN, All loss is %.3f , foward loss is %.3f, fwd decoding loss is %.3f, backward loss is %.3f, aux loss is %.3f, kld is %.3f, l2 loss is %.3f' % (
             episode,
             iteration,
             all_loss.item(),
@@ -311,7 +312,7 @@ for episode in range(num_episodes):
             bwd_nll.item(),
             aux_nll.item(),
             kld.item(),
-            args.bwd_l2_weight * l2_loss.item()
+            l2_loss.item()
         ) + '\n'
         print(log_line)
         with open(log_file, 'a') as f:
@@ -331,5 +332,7 @@ for episode in range(num_episodes):
             test_reward = evaluate_(zf)
             if (-test_reward) < (-hist_test_reward):
                 hist_test_reward = test_reward
+            if aux_loss < hist_aux_loss:
+                hist_aux_loss = aux_loss 
                 save_param(zf, zforce_filename) 
         zf.train()
