@@ -76,7 +76,7 @@ policy_net = Policy(num_inputs, num_actions)
 value_net = Value(num_inputs)
 
 
-filename = args.env_name + '_0.1_chunk/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_nll_' + str(args.fwd_ll_weight) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
+filename = args.env_name + '_0.2_chunk/zforce_reacher_model_base_10k_' +  '_lr'+ str(args.lr) + '_fwd_nll_' + str(args.fwd_ll_weight) + '_fwd_l2w_' + str(args.l2_weight) + '_aux_w_' + str(args.aux_weight_start) + '_kld_w_' + str(args.kld_weight_start) + '_' + str(random.randint(1,500))
 os.makedirs(filename, exist_ok=True)
 train_folder = os.path.join(filename, 'train')
 test_folder = os.path.join(filename, 'test')
@@ -235,7 +235,7 @@ def image_resize(image):
 
 zf.train() 
 
-num_samples, num_episodes, idx= 1000, 30, 0
+num_samples, num_episodes, idx= 1000, 50, 0
 data_file = 'data_cheetah/HalfCheetah-v2num_samples_10000_'
 
 

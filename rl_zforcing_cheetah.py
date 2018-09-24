@@ -237,6 +237,26 @@ class ZForcing(nn.Module):
             nn.LeakyReLU()
             #nn.Sigmoid()
             )
+
+        self.bwd_mean_network = nn.Sequential(
+            nn.Linear(in_features=64, out_features=32, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=64, bias=True))
+
+        self.bwd_logvar_network = nn.Sequential(
+            nn.Linear(in_features=64, out_features=32, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=64, bias=True))
+        
+        self.mean_network = nn.Sequential(
+            nn.Linear(in_features=64, out_features=32, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=64, bias=True))
+
+        self.logvar_network = nn.Sequential(
+            nn.Linear(in_features=64, out_features=32, bias=True),
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=64, bias=True))  
         self.bwd_mod = nn.LSTM(emb_dim, rnn_dim, nlayers)
         nn.init.orthogonal(self.bwd_mod.weight_hh_l0.data)
         self.fwd_mod = LSTMCell(
@@ -264,7 +284,8 @@ class ZForcing(nn.Module):
             nn.Linear(mlp_dim, 2 * rnn_dim))
         self.fwd_out_mod = nn.Linear(rnn_dim, out_dim)
         self.bwd_out_mod = nn.Linear(rnn_dim, out_dim)
-
+        self.dec_out_mod = nn.Linear(64, 64)
+        self.bwd_dec_out_mod = nn.Linear(64, 64) 
     def save(self, filename):
         state = {
             'emb_dim': self.emb_dim,
@@ -397,6 +418,7 @@ class ZForcing(nn.Module):
         outputs = torch.stack(outputs, 0)
         outputs = self.fwd_out_mod(outputs)
         dec_outs = torch.stack(dec_outs, 0)
+        dec_outs = self.dec_out_mod(dec_outs)
         return outputs, states[1:], klds, aux_cs, zs, log_pz, log_qz, dec_outs
 
     def infer(self, x, hidden):
@@ -411,6 +433,7 @@ class ZForcing(nn.Module):
 
     def bwd_pass(self, x, y, hidden):
         idx = np.arange(x.size(0))[::-1].tolist()
+        import ipdb; ipdb.set_trace()
         idx = torch.LongTensor(idx)
         idx = Variable(idx).cuda()
         y = y.detach()
@@ -419,20 +442,27 @@ class ZForcing(nn.Module):
         y_bwd = y.index_select(0, idx).detach()
         # x_bwd = torch.cat([x_bwd, x[:1]], 0)
         x_bwd_reshape = x_bwd.view(-1, *x_bwd.shape[2:])
-        print(x_bwd_reshape.shape)
         x_emb = self.bwd_emb_mod(x_bwd_reshape)
         x_bwd = x_emb.view(*x_bwd.shape[:2], self.emb_dim)
         states, _ = self.bwd_mod(x_bwd, hidden)
         #dec_states = states[:,:,None,None]
         dec_states = self.bwd_dec_linear(states) 
         dec_states = dec_states.reshape(-1, 1024, 1,1)
-        dec_outputs = self.bwd_dec_mod(dec_states)
-        bwd_l2_loss = self.l2_loss(dec_outputs.view_as(y_bwd), y_bwd)  
+        bwd_param = self.bwd_dec_mod(dec_states)
+        
+        bwd_mu = self.bwd_mean_network(bwd_param)
+        bwd_logvar = self.bwd_logvar_network(bwd_param)
+        nsteps = x_bwd.size(0)
+        eps = Variable(next(self.parameters()).data.new(bwd_mu.size(0),3, 64, 64).normal_())
+        bwd_outputs = self.reparametrize(bwd_mu,bwd_logvar, eps=eps)
+
+        bwd_states_nll = -log_prob_gaussian(y_bwd, bwd_mu.view_as(y_bwd), bwd_logvar.view_as(y_bwd))
         outputs = self.bwd_out_mod(states)
 
         states = states.index_select(0, idx)
         outputs = outputs.index_select(0, idx)
-        return states, outputs, bwd_l2_loss
+        #outputs = self.bwd_dec_out_mod(outputs)
+        return states, outputs, bwd_states_nll
     
     def generate_onestep(self, x_fwd, x_mask, hidden, return_decode=False, action=None):
         nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)
@@ -447,11 +477,13 @@ class ZForcing(nn.Module):
  
 
     def forward(self, x_fwd, x_bwd, y, x_mask, hidden, fwd_dec=False, return_stats=False):
+        import ipdb; ipdb.set_trace()
         nsteps, nbatch = x_fwd.size(0), x_fwd.size(1)
-        bwd_states, bwd_outputs, bwd_l2_loss = self.bwd_pass(x_bwd, x_fwd, hidden)
+        bwd_states, bwd_outputs, bwd_states_nll = self.bwd_pass(x_bwd, x_fwd, hidden)
         actions = torch.cat((torch.zeros(y.shape[1:]).unsqueeze(0).cuda().float(),y[:-1]),0)
         fwd_outputs, fwd_states, klds, aux_nll, zs, log_pz, log_qz, dec_outs = self.fwd_pass(
             x_fwd, hidden, actions=actions, bwd_states=bwd_states)
+        import ipdb; ipdb.set_trace()
         kld = (klds * x_mask).sum(0)
         log_pz = (log_pz * x_mask).sum(0)
         log_qz = (log_qz * x_mask).sum(0)
@@ -483,5 +515,5 @@ class ZForcing(nn.Module):
         
         fwd_state = (fwd_states[-1][0].unsqueeze(0).detach(), fwd_states[-1][1].unsqueeze(0).detach())
         if return_stats:
-            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz, bwd_l2_loss, aux_fwd_l2, fwd_state
-        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean(), bwd_l2_loss, aux_fwd_l2, fwd_state
+            return fwd_nll, bwd_nll, aux_nll, kld, log_pz, log_qz, bwd_states_nll, aux_fwd_l2, fwd_state
+        return fwd_nll.mean(), bwd_nll.mean(), aux_nll.mean(), kld.mean(), bwd_states_nll, aux_fwd_l2, fwd_state
