@@ -49,14 +49,14 @@ class ZFilter:
     using running estimates of mean,std
     """
 
-    def __init__(self, shape, demean=True, destd=True, clip=10.0):
+    def __init__(self, shape, demean=False, destd=False, clip=10.0):
         self.demean = demean
         self.destd = destd
         self.clip = clip
 
         self.rs = RunningStat(shape)
 
-    def __call__(self, x, update=True):
+    def __call__(self, x, update=False):
         if update: self.rs.push(x)
         if self.demean:
             x = x - self.rs.mean

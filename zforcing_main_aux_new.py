@@ -38,20 +38,20 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='N',
 parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                     help='interval between training status logs (default: 10)')
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--aux-weight-start', type=float, default=0.,
+parser.add_argument('--aux-weight-start', type=float, default=0.0005,
                     help='start weight for auxiliary loss')
-parser.add_argument('--aux-weight-end', type=float, default=0.,
+parser.add_argument('--aux-weight-end', type=float, default=0.0005,
                     help='end weight for auxiliary loss')
 parser.add_argument('--bwd-weight', type=float, default=0.,
                     help='weight for bwd teacher forcing loss')
-parser.add_argument('--bwd-l2-weight', type=float, default=1e-3,
+parser.add_argument('--bwd-l2-weight', type=float, default=1.0,
                     help='weight for bwd l2 decoding loss')
 parser.add_argument('--l2-weight', type=float, default=1.,
                     help='weight for fwd l2 decoding loss')
 
-parser.add_argument('--kld-weight-start', type=float, default=0.,
+parser.add_argument('--kld-weight-start', type=float, default=0.2,
                     help='start weight for kl divergence between prior and posterior z loss')
-parser.add_argument('--kld-step', type=float, default=1e-6,
+parser.add_argument('--kld-step', type=float, default=0.00005,
                     help='step size to anneal kld_weight per iteration')
 parser.add_argument('--aux-step', type=float, default=1e-6,
                     help='step size to anneal aux_weight per iteration')
@@ -59,7 +59,7 @@ parser.add_argument('--aux-step', type=float, default=1e-6,
 parser.add_argument('--eval-interval', type=int, default=50, metavar='N',
                     help='evaluation interaval (default: 50)')
 
-parser.add_argument('--val-batch-size', type=int, default=100, metavar='N',
+parser.add_argument('--val-batch-size', type=int, default=50, metavar='N',
                     help='random seed (default: 1)')
 
 args = parser.parse_args()
@@ -184,9 +184,9 @@ def evaluate_(model):
         f.write(log_line)
     return (reward_batch/num_episodes) 
 
-running_state = ZFilter((num_inputs,), clip=5)
+running_state = ZFilter((num_inputs,), demean=False,clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
-running_state_test = ZFilter((num_inputs,), clip=5)
+running_state_test = ZFilter((num_inputs,), clip=5, demean=False)
 
 load_param(policy_net, "Reacher_policy.pkl")
 load_param(value_net, "Reacher_value.pkl")
